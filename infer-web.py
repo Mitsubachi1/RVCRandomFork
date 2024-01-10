@@ -1,27 +1,30 @@
 import sys
 from shutil import rmtree
 import shutil
-import json # Mangio fork using json for preset saving
+import json  # Mangio fork using json for preset saving
 
 from glob import glob1
 from signal import SIGTERM
 import os
+
 now_dir = os.getcwd()
 sys.path.append(now_dir)
 import lib.globals.globals as rvc_globals
 from LazyImport import lazyload
 
-math = lazyload('math')
+math = lazyload("math")
 
 import traceback
 import warnings
-tensorlowest = lazyload('tensorlowest')
+
+tensorlowest = lazyload("tensorlowest")
 import faiss
-ffmpeg = lazyload('ffmpeg')
+
+ffmpeg = lazyload("ffmpeg")
 
 np = lazyload("numpy")
-torch = lazyload('torch')
-re = lazyload('regex')
+torch = lazyload("torch")
+re = lazyload("regex")
 os.environ["OPENBLAS_NUM_THREADS"] = "1"
 os.environ["no_proxy"] = "localhost, 127.0.0.1, ::1"
 import logging
@@ -57,7 +60,7 @@ RQuote = lambda val: SQuote(str(val))
 
 tmp = os.path.join(now_dir, "TEMP")
 runtime_dir = os.path.join(now_dir, "runtime/Lib/site-packages")
-directories = ['logs', 'audios', 'datasets', 'weights']
+directories = ["logs", "audios", "datasets", "weights"]
 
 rmtree(tmp, ignore_errors=True)
 rmtree(os.path.join(runtime_dir, "infer_pack"), ignore_errors=True)
@@ -72,9 +75,10 @@ warnings.filterwarnings("ignore")
 torch.manual_seed(114514)
 logging.getLogger("numba").setLevel(logging.WARNING)
 try:
-    file = open('csvdb/stop.csv', 'x')
+    file = open("csvdb/stop.csv", "x")
     file.close()
-except FileExistsError: pass
+except FileExistsError:
+    pass
 
 global DoFormant, Quefrency, Timbre
 
@@ -87,13 +91,31 @@ i18n = I18nAuto()
 i18n.print()
 # 判断是否有能用来训练和加速推理的N卡
 ngpu = torch.cuda.device_count()
-torch.torch.set_default_tensor_type(torch.DoubleTensor) ###############################
+torch.torch.set_default_tensor_type(torch.DoubleTensor)  ###############################
 gpu_infos = []
 mem = []
 if_gpu_ok = False
 
-keywords = ["10", "16", "20", "30", "40", "A2", "A3", "A4", "P4", "A50", "500", "A60", 
-            "70", "80", "90", "M4", "T4", "TITAN"]
+keywords = [
+    "10",
+    "16",
+    "20",
+    "30",
+    "40",
+    "A2",
+    "A3",
+    "A4",
+    "P4",
+    "A50",
+    "500",
+    "A60",
+    "70",
+    "80",
+    "90",
+    "M4",
+    "T4",
+    "TITAN",
+]
 
 if torch.cuda.is_available() or ngpu != 0:
     for i in range(ngpu):
@@ -101,23 +123,31 @@ if torch.cuda.is_available() or ngpu != 0:
         if any(keyword in gpu_name for keyword in keywords):
             if_gpu_ok = True  # 至少有一张能用的N卡
             gpu_infos.append("%s\t%s" % (i, gpu_name))
-            mem.append(int(torch.cuda.get_device_properties(i).total_memory / 1e9 + 0.4))
+            mem.append(
+                int(torch.cuda.get_device_properties(i).total_memory / 1e9 + 0.4)
+            )
 
-gpu_info = "\n".join(gpu_infos) if if_gpu_ok and gpu_infos else i18n("很遗憾您这没有能用的显卡来支持您训练")
+gpu_info = (
+    "\n".join(gpu_infos) if if_gpu_ok and gpu_infos else i18n("很遗憾您这没有能用的显卡来支持您训练")
+)
 default_batch_size = min(mem) // 2 if if_gpu_ok and gpu_infos else 1
 gpus = "-".join(i[0] for i in gpu_infos)
 
 hubert_model = None
 
+
 def load_hubert():
     global hubert_model
-    models, _, _ = checkpoint_utils.load_model_ensemble_and_task(["hubert_base.pt"], suffix="")
+    models, _, _ = checkpoint_utils.load_model_ensemble_and_task(
+        ["hubert_base.pt"], suffix=""
+    )
     hubert_model = models[0].to(config.device)
-    
+
     if config.is_half:
         hubert_model = hubert_model.half()
 
     hubert_model.eval()
+
 
 datasets_root = "datasets"
 weight_root = "weights"
@@ -126,30 +156,51 @@ index_root = "logs"
 fshift_root = "formantshiftcfg"
 audio_root = "audios"
 
-sup_audioext = {'wav', 'mp3', 'flac', 'ogg', 'opus',
-                'm4a', 'mp4', 'aac', 'alac', 'wma',
-                'aiff', 'webm', 'ac3'}
+sup_audioext = {
+    "wav",
+    "mp3",
+    "flac",
+    "ogg",
+    "opus",
+    "m4a",
+    "mp4",
+    "aac",
+    "alac",
+    "wma",
+    "aiff",
+    "webm",
+    "ac3",
+}
 
-names        = [os.path.join(root, file)
-               for root, _, files in os.walk(weight_root)
-               for file in files
-               if file.endswith((".pth", ".onnx"))]
+names = [
+    os.path.join(root, file)
+    for root, _, files in os.walk(weight_root)
+    for file in files
+    if file.endswith((".pth", ".onnx"))
+]
 
-indexes_list = [os.path.join(root, name)
-               for root, _, files in os.walk(index_root, topdown=False) 
-               for name in files 
-               if name.endswith(".index") and "trained" not in name]
+indexes_list = [
+    os.path.join(root, name)
+    for root, _, files in os.walk(index_root, topdown=False)
+    for name in files
+    if name.endswith(".index") and "trained" not in name
+]
 
-audio_paths  = [os.path.join(root, name)
-               for root, _, files in os.walk(audio_root, topdown=False) 
-               for name in files
-               if name.endswith(tuple(sup_audioext))]
+audio_paths = [
+    os.path.join(root, name)
+    for root, _, files in os.walk(audio_root, topdown=False)
+    for name in files
+    if name.endswith(tuple(sup_audioext))
+]
 
-uvr5_names  = [name.replace(".pth", "") 
-              for name in os.listdir(weight_uvr5_root) 
-              if name.endswith(".pth") or "onnx" in name]
+uvr5_names = [
+    name.replace(".pth", "")
+    for name in os.listdir(weight_uvr5_root)
+    if name.endswith(".pth") or "onnx" in name
+]
 
-check_for_name = lambda: sorted(names)[0] if names else ''
+check_for_name = lambda: sorted(names)[0] if names else ""
+
 
 def get_indexes():
     indexes_list = [
@@ -158,8 +209,9 @@ def get_indexes():
         for filename in filenames
         if filename.endswith(".index") and "trained" not in filename
     ]
-    
-    return indexes_list if indexes_list else ''
+
+    return indexes_list if indexes_list else ""
+
 
 def get_fshift_presets():
     fshift_presets_list = [
@@ -168,73 +220,89 @@ def get_fshift_presets():
         for filename in filenames
         if filename.endswith(".txt")
     ]
-    
-    return fshift_presets_list if fshift_presets_list else ''
+
+    return fshift_presets_list if fshift_presets_list else ""
+
 
 def vc_single(
-    sid:               str,
+    sid: str,
     input_audio_path0: str,
     input_audio_path1: str,
-    f0_up_key:         int,
-    f0_file:           str,
-    f0_method:         str,
-    file_index:        str,
-    file_index2:       str,
-    index_rate:        float,
-    filter_radius:     int,
-    resample_sr:       int,
-    rms_mix_rate:      float,
-    protect:           float,
-    crepe_hop_length:  int,
-    f0_min:            int,
-    note_min:          str,
-    f0_max:            int,
-    note_max:          str,
+    f0_up_key: int,
+    f0_file: str,
+    f0_method: str,
+    file_index: str,
+    file_index2: str,
+    index_rate: float,
+    filter_radius: int,
+    resample_sr: int,
+    rms_mix_rate: float,
+    protect: float,
+    crepe_hop_length: int,
+    f0_min: int,
+    note_min: str,
+    f0_max: int,
+    note_max: str,
 ):
     global tgt_sr, net_g, vc, hubert_model, version
     if not input_audio_path0 and not input_audio_path1:
         return "You need to upload an audio", None
 
-    if (not os.path.exists(input_audio_path0)) and (not os.path.exists(os.path.join(now_dir, input_audio_path0))):
+    if (not os.path.exists(input_audio_path0)) and (
+        not os.path.exists(os.path.join(now_dir, input_audio_path0))
+    ):
         return "Audio doesn't exist!!!!!!!!", None
 
     f0_up_key = int(f0_up_key)
-    
-    if rvc_globals.NotesOrHertz and f0_method != 'rmvpe':
+
+    if rvc_globals.NotesOrHertz and f0_method != "rmvpe":
         f0_min = note_to_hz(note_min) if note_min else 50
         f0_max = note_to_hz(note_max) if note_max else 1100
-        print(f"Converted min pitch freq - {f0_min}\n"
-              f"Converted max pitch freq - {f0_max}")
+        print(
+            f"Converted min pitch freq - {f0_min}\n"
+            f"Converted max pitch freq - {f0_max}"
+        )
     else:
         f0_min = f0_min or 50
         f0_max = f0_max or 1100
     try:
         input_audio_path1 = input_audio_path1 or input_audio_path0
-        audio = load_audio(input_audio_path1,
-                           16000,
-                           DoFormant=rvc_globals.DoFormant,
-                           Quefrency=rvc_globals.Quefrency,
-                           Timbre=rvc_globals.Timbre)
-        
+        audio = load_audio(
+            input_audio_path1,
+            16000,
+            DoFormant=rvc_globals.DoFormant,
+            Quefrency=rvc_globals.Quefrency,
+            Timbre=rvc_globals.Timbre,
+        )
+
         audio_max = np.abs(audio).max() / 0.95
         if audio_max > 1:
             audio /= audio_max
-            
+
         times = [0, 0, 0]
         if not hubert_model:
             load_hubert()
-        
+
         try:
             if_f0 = cpt.get("f0", 1)
         except NameError:
             message = "Model was not properly selected."
             print(message)
             return message, None
-        
+
         file_index = (
-            file_index.strip(" ").strip('"').strip("\n").strip('"').strip(" ").replace("trained", "added")
-        ) if file_index != "" else file_index2
-        
+            (
+                file_index.strip(" ")
+                .strip('"')
+                .strip("\n")
+                .strip('"')
+                .strip(" ")
+                .replace("trained", "added")
+            )
+            if file_index != ""
+            else file_index2
+        )
+
         try:
             audio_opt = vc.pipeline(
                 hubert_model,
@@ -257,27 +325,37 @@ def vc_single(
                 crepe_hop_length,
                 f0_file=f0_file,
                 f0_min=f0_min,
-                f0_max=f0_max
+                f0_max=f0_max,
             )
         except AssertionError:
             message = "Mismatching index version detected (v1 with v2, or v2 with v1)."
             print(message)
             return message, None
         except NameError:
-            message = "RVC libraries are still loading. Please try again in a few seconds."
+            message = (
+                "RVC libraries are still loading. Please try again in a few seconds."
+            )
             print(message)
             return message, None
-        
+
         if tgt_sr != resample_sr >= 16000:
             tgt_sr = resample_sr
-            
-        index_info = "Using index:%s." % file_index if os.path.exists(file_index) else "Index not used."
-        
-        return f"Success.\n {index_info}\nTime:\n npy:{times[0]}, f0:{times[1]}, infer:{times[2]}", (tgt_sr, audio_opt)
+
+        index_info = (
+            "Using index:%s." % file_index
+            if os.path.exists(file_index)
+            else "Index not used."
+        )
+
+        return (
+            f"Success.\n {index_info}\nTime:\n npy:{times[0]}, f0:{times[1]}, infer:{times[2]}",
+            (tgt_sr, audio_opt),
+        )
     except:
         info = traceback.format_exc()
         print(info)
         return info, (None, None)
+
 
 def vc_multi(
     sid,
@@ -301,34 +379,74 @@ def vc_multi(
     f0_max,
     note_max,
 ):
-    if rvc_globals.NotesOrHertz and f0_method != 'rmvpe':
+    if rvc_globals.NotesOrHertz and f0_method != "rmvpe":
         f0_min = note_to_hz(note_min) if note_min else 50
         f0_max = note_to_hz(note_max) if note_max else 1100
-        print(f"Converted min pitch freq - {f0_min}\n"
-              f"Converted max pitch freq - {f0_max}")
+        print(
+            f"Converted min pitch freq - {f0_min}\n"
+            f"Converted max pitch freq - {f0_max}"
+        )
     else:
         f0_min = f0_min or 50
         f0_max = f0_max or 1100
 
     try:
-        dir_path, opt_root = [x.strip(" ").strip('"').strip("\n").strip('"').strip(" ") for x in [dir_path, opt_root]]
+        dir_path, opt_root = [
+            x.strip(" ").strip('"').strip("\n").strip('"').strip(" ")
+            for x in [dir_path, opt_root]
+        ]
         os.makedirs(opt_root, exist_ok=True)
-        
-        paths = [os.path.join(dir_path, name) for name in os.listdir(dir_path)] if dir_path else [path.name for path in paths]
+
+        paths = (
+            [os.path.join(dir_path, name) for name in os.listdir(dir_path)]
+            if dir_path
+            else [path.name for path in paths]
+        )
         infos = []
 
         for path in paths:
-            info, opt = vc_single(sid, path, None, f0_up_key, None, f0_method, file_index, file_index2, index_rate, filter_radius,
-                                  resample_sr, rms_mix_rate, protect, crepe_hop_length, f0_min, note_min, f0_max, note_max)
+            info, opt = vc_single(
+                sid,
+                path,
+                None,
+                f0_up_key,
+                None,
+                f0_method,
+                file_index,
+                file_index2,
+                index_rate,
+                filter_radius,
+                resample_sr,
+                rms_mix_rate,
+                protect,
+                crepe_hop_length,
+                f0_min,
+                note_min,
+                f0_max,
+                note_max,
+            )
 
             if "Success" in info:
                 try:
                     tgt_sr, audio_opt = opt
                     output_path = f"{opt_root}/{os.path.basename(path)}"
-                    path, extension = output_path if format1 in ["wav", "flac", "mp3", "ogg", "aac"] else f"{output_path}.wav", format1
+                    path, extension = (
+                        output_path
+                        if format1 in ["wav", "flac", "mp3", "ogg", "aac"]
+                        else f"{output_path}.wav",
+                        format1,
+                    )
                     SFWrite(path, audio_opt, tgt_sr)
-                    if os.path.exists(path) and extension not in ["wav", "flac", "mp3", "ogg", "aac"]:
-                        os.system(f"ffmpeg -i {RQuote(path)} -vn {RQuote(path[:-4])}.{RQuote(extension)} -q:a 2 -y")
+                    if os.path.exists(path) and extension not in [
+                        "wav",
+                        "flac",
+                        "mp3",
+                        "ogg",
+                        "aac",
+                    ]:
+                        os.system(
+                            f"ffmpeg -i {RQuote(path)} -vn {RQuote(path[:-4])}.{RQuote(extension)} -q:a 2 -y"
+                        )
                 except:
                     info += traceback.format_exc()
             infos.append(f"{os.path.basename(path)}->{info}")
@@ -341,16 +459,27 @@ def vc_multi(
 def uvr(model_name, inp_root, save_root_vocal, paths, save_root_ins, agg, format0):
     infos = []
     try:
-        inp_root, save_root_vocal, save_root_ins = [x.strip(" ").strip('"').strip("\n").strip('"').strip(" ") for x in [inp_root, save_root_vocal, save_root_ins]]
-        
-        pre_fun = MDXNetDereverb(15) if model_name == "onnx_dereverb_By_FoxJoy" else (_audio_pre_ if "DeEcho" not in model_name else _audio_pre_new)(
-                    agg=int(agg),
-                    model_path=os.path.join(weight_uvr5_root, model_name + ".pth"),
-                    device=config.device,
-                    is_half=config.is_half,
-                )
-                
-        paths = [os.path.join(inp_root, name) for name in os.listdir(inp_root)] if inp_root else [path.name for path in paths]
+        inp_root, save_root_vocal, save_root_ins = [
+            x.strip(" ").strip('"').strip("\n").strip('"').strip(" ")
+            for x in [inp_root, save_root_vocal, save_root_ins]
+        ]
+
+        pre_fun = (
+            MDXNetDereverb(15)
+            if model_name == "onnx_dereverb_By_FoxJoy"
+            else (_audio_pre_ if "DeEcho" not in model_name else _audio_pre_new)(
+                agg=int(agg),
+                model_path=os.path.join(weight_uvr5_root, model_name + ".pth"),
+                device=config.device,
+                is_half=config.is_half,
+            )
+        )
+
+        paths = (
+            [os.path.join(inp_root, name) for name in os.listdir(inp_root)]
+            if inp_root
+            else [path.name for path in paths]
+        )
 
         for path in paths:
             inp_path = os.path.join(inp_root, path)
@@ -358,21 +487,30 @@ def uvr(model_name, inp_root, save_root_vocal, paths, save_root_ins, agg, format
 
             try:
                 info = ffmpeg.probe(inp_path, cmd="ffprobe")
-                if info["streams"][0]["channels"] == 2 and info["streams"][0]["sample_rate"] == "44100":
+                if (
+                    info["streams"][0]["channels"] == 2
+                    and info["streams"][0]["sample_rate"] == "44100"
+                ):
                     need_reformat = 0
-                    pre_fun._path_audio_(inp_path, save_root_ins, save_root_vocal, format0)
+                    pre_fun._path_audio_(
+                        inp_path, save_root_ins, save_root_vocal, format0
+                    )
                     done = 1
             except:
                 traceback.print_exc()
 
             if need_reformat:
                 tmp_path = f"{tmp}/{os.path.basename(RQuote(inp_path))}.reformatted.wav"
-                os.system(f"ffmpeg -i {RQuote(inp_path)} -vn -acodec pcm_s16le -ac 2 -ar 44100 {RQuote(tmp_path)} -y")
+                os.system(
+                    f"ffmpeg -i {RQuote(inp_path)} -vn -acodec pcm_s16le -ac 2 -ar 44100 {RQuote(tmp_path)} -y"
+                )
                 inp_path = tmp_path
 
             try:
                 if not done:
-                    pre_fun._path_audio_(inp_path, save_root_ins, save_root_vocal, format0)
+                    pre_fun._path_audio_(
+                        inp_path, save_root_ins, save_root_vocal, format0
+                    )
                 infos.append(f"{os.path.basename(inp_path)}->Success")
                 yield "\n".join(infos)
             except:
@@ -390,13 +528,16 @@ def uvr(model_name, inp_root, save_root_vocal, paths, save_root_ins, agg, format
                 del pre_fun.model
 
             del pre_fun
-        except: traceback.print_exc()
+        except:
+            traceback.print_exc()
 
         print("clean_empty_cache")
 
-        if torch.cuda.is_available(): torch.cuda.empty_cache()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
     yield "\n".join(infos)
+
 
 def get_vc(sid, to_return_protect0, to_return_protect1):
     global n_spk, tgt_sr, net_g, vc, cpt, version, hubert_model
@@ -408,8 +549,19 @@ def get_vc(sid, to_return_protect0, to_return_protect1):
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
             if_f0, version = cpt.get("f0", 1), cpt.get("version", "v1")
-            net_g = (SynthesizerTrnMs256NSFsid if version == "v1" else SynthesizerTrnMs768NSFsid)(
-                *cpt["config"], is_half=config.is_half) if if_f0 == 1 else (SynthesizerTrnMs256NSFsid_nono if version == "v1" else SynthesizerTrnMs768NSFsid_nono)(*cpt["config"])
+            net_g = (
+                (
+                    SynthesizerTrnMs256NSFsid
+                    if version == "v1"
+                    else SynthesizerTrnMs768NSFsid
+                )(*cpt["config"], is_half=config.is_half)
+                if if_f0 == 1
+                else (
+                    SynthesizerTrnMs256NSFsid_nono
+                    if version == "v1"
+                    else SynthesizerTrnMs768NSFsid_nono
+                )(*cpt["config"])
+            )
             del net_g, cpt
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
@@ -422,14 +574,35 @@ def get_vc(sid, to_return_protect0, to_return_protect1):
     cpt["config"][-3] = cpt["weight"]["emb_g.weight"].shape[0]
 
     if cpt.get("f0", 1) == 0:
-        to_return_protect0 = to_return_protect1 = {"visible": False, "value": 0.5, "__type__": "update"}
+        to_return_protect0 = to_return_protect1 = {
+            "visible": False,
+            "value": 0.5,
+            "__type__": "update",
+        }
     else:
-        to_return_protect0 = {"visible": True, "value": to_return_protect0, "__type__": "update"}
-        to_return_protect1 = {"visible": True, "value": to_return_protect1, "__type__": "update"}
+        to_return_protect0 = {
+            "visible": True,
+            "value": to_return_protect0,
+            "__type__": "update",
+        }
+        to_return_protect1 = {
+            "visible": True,
+            "value": to_return_protect1,
+            "__type__": "update",
+        }
 
     version = cpt.get("version", "v1")
-    net_g = (SynthesizerTrnMs256NSFsid if version == "v1" else SynthesizerTrnMs768NSFsid)(
-        *cpt["config"], is_half=config.is_half) if cpt.get("f0", 1) == 1 else (SynthesizerTrnMs256NSFsid_nono if version == "v1" else SynthesizerTrnMs768NSFsid_nono)(*cpt["config"])
+    net_g = (
+        (SynthesizerTrnMs256NSFsid if version == "v1" else SynthesizerTrnMs768NSFsid)(
+            *cpt["config"], is_half=config.is_half
+        )
+        if cpt.get("f0", 1) == 1
+        else (
+            SynthesizerTrnMs256NSFsid_nono
+            if version == "v1"
+            else SynthesizerTrnMs768NSFsid_nono
+        )(*cpt["config"])
+    )
     del net_g.enc_q
 
     print(net_g.load_state_dict(cpt["weight"], strict=False))
@@ -442,23 +615,34 @@ def get_vc(sid, to_return_protect0, to_return_protect1):
     return (
         {"visible": False, "maximum": n_spk, "__type__": "update"},
         to_return_protect0,
-        to_return_protect1
+        to_return_protect1,
     )
 
 
 def change_choices():
-    names        = [os.path.join(root, file)
-                   for root, _, files in os.walk(weight_root)
-                   for file in files
-                   if file.endswith((".pth", ".onnx"))]
-    indexes_list = [os.path.join(root, name) for root, _, files in os.walk(index_root, topdown=False) for name in files if name.endswith(".index") and "trained" not in name]
-    audio_paths  = [os.path.join(audio_root, file) for file in os.listdir(os.path.join(now_dir, "audios"))]
+    names = [
+        os.path.join(root, file)
+        for root, _, files in os.walk(weight_root)
+        for file in files
+        if file.endswith((".pth", ".onnx"))
+    ]
+    indexes_list = [
+        os.path.join(root, name)
+        for root, _, files in os.walk(index_root, topdown=False)
+        for name in files
+        if name.endswith(".index") and "trained" not in name
+    ]
+    audio_paths = [
+        os.path.join(audio_root, file)
+        for file in os.listdir(os.path.join(now_dir, "audios"))
+    ]
 
     return (
-        {"choices": sorted(names), "__type__": "update"}, 
-        {"choices": sorted(indexes_list), "__type__": "update"}, 
-        {"choices": sorted(audio_paths), "__type__": "update"}
+        {"choices": sorted(names), "__type__": "update"},
+        {"choices": sorted(indexes_list), "__type__": "update"},
+        {"choices": sorted(audio_paths), "__type__": "update"},
     )
+
 
 sr_dict = {
     "32k": 32000,
@@ -466,16 +650,19 @@ sr_dict = {
     "48k": 48000,
 }
 
+
 def if_done(done, p):
     while p.poll() is None:
         time.sleep(0.5)
 
     done[0] = True
 
+
 def if_done_multi(done, ps):
     while not all(p.poll() is not None for p in ps):
         time.sleep(0.5)
     done[0] = True
+
 
 def formant_enabled(cbox, qfrency, tmbre):
     global DoFormant, Quefrency, Timbre
@@ -490,10 +677,8 @@ def formant_enabled(cbox, qfrency, tmbre):
 
     visibility_update = {"visible": DoFormant, "__type__": "update"}
 
-    return (
-        {"value": DoFormant, "__type__": "update"},
-    ) + (visibility_update,) * 6
-        
+    return ({"value": DoFormant, "__type__": "update"},) + (visibility_update,) * 6
+
 
 def formant_apply(qfrency, tmbre):
     global Quefrency, Timbre, DoFormant
@@ -506,40 +691,42 @@ def formant_apply(qfrency, tmbre):
     rvc_globals.Quefrency = qfrency
     rvc_globals.Timbre = tmbre
 
-    return ({"value": Quefrency, "__type__": "update"}, {"value": Timbre, "__type__": "update"})
+    return (
+        {"value": Quefrency, "__type__": "update"},
+        {"value": Timbre, "__type__": "update"},
+    )
+
 
 def update_fshift_presets(preset, qfrency, tmbre):
-
-    if preset:  
-        with open(preset, 'r') as p:
+    if preset:
+        with open(preset, "r") as p:
             content = p.readlines()
             qfrency, tmbre = content[0].strip(), content[1]
-            
+
         formant_apply(qfrency, tmbre)
     else:
         qfrency, tmbre = preset_apply(preset, qfrency, tmbre)
-        
+
     return (
         {"choices": get_fshift_presets(), "__type__": "update"},
         {"value": qfrency, "__type__": "update"},
         {"value": tmbre, "__type__": "update"},
     )
 
+
 def preprocess_dataset(trainset_dir, exp_dir, sr, n_p):
-    if " " in trainset_dir and "\"" not in trainset_dir:
-        trainset_dir = "\"" + trainset_dir + "\""
+    if " " in trainset_dir and '"' not in trainset_dir:
+        trainset_dir = '"' + trainset_dir + '"'
 
     sr = sr_dict[sr]
-    
+
     log_dir = os.path.join(now_dir, "logs", exp_dir)
     log_file = os.path.join(log_dir, "preprocess.log")
 
-
     os.makedirs(log_dir, exist_ok=True)
 
-    with open(log_file, "w") as f: pass
-
-
+    with open(log_file, "w") as f:
+        pass
 
     cmd = (
         f"{config.python_cmd} "
@@ -555,29 +742,37 @@ def preprocess_dataset(trainset_dir, exp_dir, sr, n_p):
     p = Popen(cmd, shell=True)
     done = [False]
 
-    threading.Thread(target=if_done, args=(done,p,)).start()
+    threading.Thread(
+        target=if_done,
+        args=(
+            done,
+            p,
+        ),
+    ).start()
 
     while not done[0]:
         with open(log_file, "r") as f:
             yield f.read()
         time.sleep(1)
-   
+
     with open(log_file, "r") as f:
         log = f.read()
-    
+
     print(log)
     yield log
+
 
 def extract_f0_feature(gpus, n_p, f0method, if_f0, exp_dir, version19, echl):
     gpus = gpus.split("-")
     log_dir = f"{now_dir}/logs/{exp_dir}"
     log_file = f"{log_dir}/extract_f0_feature.log"
     os.makedirs(log_dir, exist_ok=True)
-    with open(log_file, "w") as f: pass
+    with open(log_file, "w") as f:
+        pass
 
     if if_f0:
         cmd = (
-            f"{config.python_cmd} extract_f0_print.py {log_dir} " 
+            f"{config.python_cmd} extract_f0_print.py {log_dir} "
             f"{RQuote(n_p)} {RQuote(f0method)} {RQuote(echl)}"
         )
         print(cmd)
@@ -609,12 +804,13 @@ def extract_f0_feature(gpus, n_p, f0method, if_f0, exp_dir, version19, echl):
         with open(log_file, "r") as f:
             yield f.read()
         time.sleep(1)
-    
+
     with open(log_file, "r") as f:
         log = f.read()
 
     print(log)
     yield log
+
 
 def change_sr2(sr2, if_f0_3, version19):
     path_str = "" if version19 == "v1" else "_v2"
@@ -627,17 +823,18 @@ def change_sr2(sr2, if_f0_3, version19):
             model_paths[model_type] = file_path
         else:
             print(f"{file_path} doesn't exist, will not use pretrained model.")
-    
+
     return (model_paths["G"], model_paths["D"])
 
 
 def change_version19(sr2, if_f0_3, version19):
     path_str = "" if version19 == "v1" else "_v2"
     sr2 = "40k" if (sr2 == "32k" and version19 == "v1") else sr2
-    choices_update = {
-        "choices": ["40k", "48k"], "__type__": "update", "value": sr2
-        } if version19 == "v1" else {
-            "choices": ["40k", "48k", "32k"], "__type__": "update", "value": sr2}
+    choices_update = (
+        {"choices": ["40k", "48k"], "__type__": "update", "value": sr2}
+        if version19 == "v1"
+        else {"choices": ["40k", "48k", "32k"], "__type__": "update", "value": sr2}
+    )
 
     f0_str = "f0" if if_f0_3 else ""
     model_paths = {"G": "", "D": ""}
@@ -654,10 +851,10 @@ def change_version19(sr2, if_f0_3, version19):
 
 def change_f0(if_f0_3, sr2, version19):  # f0method8,pretrained_G14,pretrained_D15
     path_str = "" if version19 == "v1" else "_v2"
-    
+
     pth_format = "pretrained%s/f0%s%s.pth"
-    model_desc = { "G": "", "D": "" }
-    
+    model_desc = {"G": "", "D": ""}
+
     for model_type in model_desc:
         file_path = pth_format % (path_str, model_type, sr2)
         if os.access(file_path, os.F_OK):
@@ -669,18 +866,19 @@ def change_f0(if_f0_3, sr2, version19):  # f0method8,pretrained_G14,pretrained_D
         {"visible": if_f0_3, "__type__": "update"},
         model_desc["G"],
         model_desc["D"],
-        {"visible": if_f0_3, "__type__": "update"}
+        {"visible": if_f0_3, "__type__": "update"},
     )
 
 
 global log_interval
+
 
 def set_log_interval(exp_dir, batch_size12):
     log_interval = 1
     folder_path = os.path.join(exp_dir, "1_16k_wavs")
 
     if os.path.isdir(folder_path):
-        wav_files_num = len(glob1(folder_path,"*.wav"))
+        wav_files_num = len(glob1(folder_path, "*.wav"))
 
         if wav_files_num > 0:
             log_interval = math.ceil(wav_files_num / batch_size12)
@@ -689,7 +887,9 @@ def set_log_interval(exp_dir, batch_size12):
 
     return log_interval
 
+
 global PID, PROCESS
+
 
 def click_train(
     exp_dir1,
@@ -707,9 +907,10 @@ def click_train(
     if_save_every_weights18,
     version19,
 ):
-    with open('csvdb/stop.csv', 'w+') as file: file.write("False")
+    with open("csvdb/stop.csv", "w+") as file:
+        file.write("False")
     log_dir = os.path.join(now_dir, "logs", exp_dir1)
-    
+
     os.makedirs(log_dir, exist_ok=True)
 
     gt_wavs_dir = os.path.join(log_dir, "0_gt_wavs")
@@ -720,28 +921,48 @@ def click_train(
     log_interval = set_log_interval(log_dir, batch_size12)
 
     required_dirs = [gt_wavs_dir, feature_dir]
-    
+
     if if_f0_3:
         f0_dir = f"{log_dir}/2a_f0"
         f0nsf_dir = f"{log_dir}/2b-f0nsf"
         required_dirs.extend([f0_dir, f0nsf_dir])
 
-    names = set(name.split(".")[0] for directory in required_dirs for name in os.listdir(directory))
+    names = set(
+        name.split(".")[0]
+        for directory in required_dirs
+        for name in os.listdir(directory)
+    )
 
     def generate_paths(name):
         paths = [gt_wavs_dir, feature_dir]
         if if_f0_3:
             paths.extend([f0_dir, f0nsf_dir])
-        return '|'.join([path.replace('\\', '\\\\') + '/' + name + ('.wav.npy' if path in [f0_dir, f0nsf_dir] else '.wav' if path == gt_wavs_dir else '.npy') for path in paths])
+        return "|".join(
+            [
+                path.replace("\\", "\\\\")
+                + "/"
+                + name
+                + (
+                    ".wav.npy"
+                    if path in [f0_dir, f0nsf_dir]
+                    else ".wav"
+                    if path == gt_wavs_dir
+                    else ".npy"
+                )
+                for path in paths
+            ]
+        )
 
     opt = [f"{generate_paths(name)}|{spk_id5}" for name in names]
     mute_dir = f"{now_dir}/logs/mute"
-    
+
     for _ in range(2):
         mute_string = f"{mute_dir}/0_gt_wavs/mute{sr2}.wav|{mute_dir}/3_feature{feature_dim}/mute.npy"
         if if_f0_3:
-            mute_string += f"|{mute_dir}/2a_f0/mute.wav.npy|{mute_dir}/2b-f0nsf/mute.wav.npy"
-        opt.append(mute_string+f"|{spk_id5}")
+            mute_string += (
+                f"|{mute_dir}/2a_f0/mute.wav.npy|{mute_dir}/2b-f0nsf/mute.wav.npy"
+            )
+        opt.append(mute_string + f"|{spk_id5}")
 
     shuffle(opt)
     with open(f"{log_dir}/filelist.txt", "w") as f:
@@ -757,7 +978,7 @@ def click_train(
 
     G_train = f"-pg {pretrained_G14}" if pretrained_G14 else ""
     D_train = f"-pd {pretrained_D15}" if pretrained_D15 else ""
-    
+
     cmd = (
         f"{config.python_cmd} train_nsf_sim_cache_sid_load_pretrain.py -e {exp_dir1} -sr {sr2} -f0 {int(if_f0_3)} -bs {batch_size12}"
         f" -g {gpus16 if gpus16 is not None else ''} -te {total_epoch11} -se {save_epoch10} {G_train} {D_train} -l {int(if_save_latest13)}"
@@ -773,30 +994,47 @@ def click_train(
 
     p.wait()
 
-    return "Training is done, check train.log", {"visible": False, "__type__": "update"}, {"visible": True, "__type__": "update"}
+    return (
+        "Training is done, check train.log",
+        {"visible": False, "__type__": "update"},
+        {"visible": True, "__type__": "update"},
+    )
+
 
 def train_index(exp_dir1, version19):
-    exp_dir = os.path.join(now_dir, 'logs', exp_dir1)
+    exp_dir = os.path.join(now_dir, "logs", exp_dir1)
     os.makedirs(exp_dir, exist_ok=True)
 
-    feature_dim = '256' if version19 == "v1" else '768'
+    feature_dim = "256" if version19 == "v1" else "768"
     feature_dir = os.path.join(exp_dir, f"3_feature{feature_dim}")
 
     if not os.path.exists(feature_dir) or len(os.listdir(feature_dir)) == 0:
         return "请先进行特征提取!"
 
-    npys = [np.load(os.path.join(feature_dir, name)) for name in sorted(os.listdir(feature_dir))]
-            
+    npys = [
+        np.load(os.path.join(feature_dir, name))
+        for name in sorted(os.listdir(feature_dir))
+    ]
+
     big_npy = np.concatenate(npys, 0)
     np.random.shuffle(big_npy)
 
     infos = []
-    if big_npy.shape[0] > 2*10**5:
+    if big_npy.shape[0] > 2 * 10**5:
         infos.append("Trying doing kmeans %s shape to 10k centers." % big_npy.shape[0])
         yield "\n".join(infos)
         try:
-            big_npy = MiniBatchKMeans(n_clusters=10000, verbose=True, batch_size=256 * config.n_cpu, 
-                                      compute_labels=False,init="random").fit(big_npy).cluster_centers_
+            big_npy = (
+                MiniBatchKMeans(
+                    n_clusters=10000,
+                    verbose=True,
+                    batch_size=256 * config.n_cpu,
+                    compute_labels=False,
+                    init="random",
+                )
+                .fit(big_npy)
+                .cluster_centers_
+            )
         except Exception as e:
             infos.append(str(e))
             yield "\n".join(infos)
@@ -822,21 +1060,25 @@ def train_index(exp_dir1, version19):
 
     batch_size_add = 8192
     for i in range(0, big_npy.shape[0], batch_size_add):
-        index.add(big_npy[i:i + batch_size_add])
-    
+        index.add(big_npy[i : i + batch_size_add])
+
     index_file_base = f"{exp_dir}/added_IVF{n_ivf}_Flat_nprobe_{index_ivf.nprobe}_{exp_dir1}_{version19}.index"
     faiss.write_index(index, index_file_base)
 
-    infos.append(f"Successful Index Construction，added_IVF{n_ivf}_Flat_nprobe_{index_ivf.nprobe}_{exp_dir1}_{version19}.index")
+    infos.append(
+        f"Successful Index Construction，added_IVF{n_ivf}_Flat_nprobe_{index_ivf.nprobe}_{exp_dir1}_{version19}.index"
+    )
     yield "\n".join(infos)
 
-#def setBoolean(status): #true to false and vice versa / not implemented yet, dont touch!!!!!!!
+
+# def setBoolean(status): #true to false and vice versa / not implemented yet, dont touch!!!!!!!
 #    status = not status
 #    return status
 
+
 def change_info_(ckpt_path):
     train_log_path = os.path.join(os.path.dirname(ckpt_path), "train.log")
-    
+
     if not os.path.exists(train_log_path):
         return {"__type__": "update"}, {"__type__": "update"}, {"__type__": "update"}
 
@@ -844,7 +1086,7 @@ def change_info_(ckpt_path):
         with open(train_log_path, "r") as f:
             info_line = next(f).strip()
             info = eval(info_line.split("\t")[-1])
-            
+
             sr, f0 = info.get("sample_rate"), info.get("if_f0")
             version = "v2" if info.get("version") == "v2" else "v1"
 
@@ -854,23 +1096,26 @@ def change_info_(ckpt_path):
         print(f"Exception occurred: {str(e)}, Traceback: {traceback.format_exc()}")
         return {"__type__": "update"}, {"__type__": "update"}, {"__type__": "update"}
 
+
 def export_onnx(model_path, exported_path):
     device = torch.device("cpu")
     checkpoint = torch.load(model_path, map_location=device)
     vec_channels = 256 if checkpoint.get("version", "v1") == "v1" else 768
-    
+
     test_inputs = {
         "phone": torch.rand(1, 200, vec_channels),
         "phone_lengths": torch.LongTensor([200]),
         "pitch": torch.randint(5, 255, (1, 200)),
         "pitchf": torch.rand(1, 200),
         "ds": torch.zeros(1).long(),
-        "rnd": torch.rand(1, 192, 200)
+        "rnd": torch.rand(1, 192, 200),
     }
-    
+
     checkpoint["config"][-3] = checkpoint["weight"]["emb_g.weight"].shape[0]
-    net_g = SynthesizerTrnMsNSFsidM(*checkpoint["config"], is_half=False, version=checkpoint.get("version", "v1"))
-    
+    net_g = SynthesizerTrnMsNSFsidM(
+        *checkpoint["config"], is_half=False, version=checkpoint.get("version", "v1")
+    )
+
     net_g.load_state_dict(checkpoint["weight"], strict=False)
     net_g = net_g.to(device)
 
@@ -890,11 +1135,12 @@ def export_onnx(model_path, exported_path):
     return "Finished"
 
 
-#region Mangio-RVC-Fork CLI App
+# region Mangio-RVC-Fork CLI App
 
 import scipy.io.wavfile as wavfile
 
 cli_current_page = "HOME"
+
 
 def cli_split_command(com):
     exp = r'(?:(?<=\s)|^)"(.*?)"(?=\s|$)|(\S+)'
@@ -902,27 +1148,51 @@ def cli_split_command(com):
     split_array = [group[0] if group[0] else group[1] for group in split_array]
     return split_array
 
+
 execute_generator_function = lambda genObject: all(x is not None for x in genObject)
 
+
 def cli_infer(com):
-    model_name, source_audio_path, output_file_name, feature_index_path, speaker_id, transposition, f0_method, crepe_hop_length, harvest_median_filter, resample, mix, feature_ratio, protection_amnt, _, f0_min, f0_max, do_formant = cli_split_command(com)[:17]
+    (
+        model_name,
+        source_audio_path,
+        output_file_name,
+        feature_index_path,
+        speaker_id,
+        transposition,
+        f0_method,
+        crepe_hop_length,
+        harvest_median_filter,
+        resample,
+        mix,
+        feature_ratio,
+        protection_amnt,
+        _,
+        f0_min,
+        f0_max,
+        do_formant,
+    ) = cli_split_command(com)[:17]
 
-    speaker_id, crepe_hop_length, harvest_median_filter, resample = map(int, [speaker_id, crepe_hop_length, harvest_median_filter, resample])
-    transposition, mix, feature_ratio, protection_amnt = map(float, [transposition, mix, feature_ratio, protection_amnt])
+    speaker_id, crepe_hop_length, harvest_median_filter, resample = map(
+        int, [speaker_id, crepe_hop_length, harvest_median_filter, resample]
+    )
+    transposition, mix, feature_ratio, protection_amnt = map(
+        float, [transposition, mix, feature_ratio, protection_amnt]
+    )
 
-    if do_formant.lower() == 'false':
+    if do_formant.lower() == "false":
         Quefrency = 1.0
         Timbre = 1.0
     else:
         Quefrency, Timbre = map(float, cli_split_command(com)[17:19])
 
-    rvc_globals.DoFormant = do_formant.lower() == 'true'
+    rvc_globals.DoFormant = do_formant.lower() == "true"
     rvc_globals.Quefrency = Quefrency
     rvc_globals.Timbre = Timbre
 
-    output_message = 'Mangio-RVC-Fork Infer-CLI:'
-    output_path = f'audio-outputs/{output_file_name}'
-    
+    output_message = "Mangio-RVC-Fork Infer-CLI:"
+    output_path = f"audio-outputs/{output_file_name}"
+
     print(f"{output_message} Starting the inference...")
     vc_data = get_vc(model_name, protection_amnt, protection_amnt)
     print(vc_data)
@@ -933,7 +1203,7 @@ def cli_infer(com):
         source_audio_path,
         source_audio_path,
         transposition,
-        None, # f0 file support not implemented
+        None,  # f0 file support not implemented
         f0_method,
         feature_index_path,
         feature_index_path,
@@ -946,7 +1216,7 @@ def cli_infer(com):
         f0_min=f0_min,
         note_min=None,
         f0_max=f0_max,
-        note_max=None
+        note_max=None,
     )
 
     if "Success." in conversion_data[0]:
@@ -954,23 +1224,32 @@ def cli_infer(com):
         wavfile.write(output_path, conversion_data[1][0], conversion_data[1][1])
         print(f"{output_message} Finished! Saved output to {output_path}")
     else:
-        print(f"{output_message} Inference failed. Here's the traceback: {conversion_data[0]}")
-        
+        print(
+            f"{output_message} Inference failed. Here's the traceback: {conversion_data[0]}"
+        )
+
+
 def cli_pre_process(com):
     print("Mangio-RVC-Fork Pre-process: Starting...")
     execute_generator_function(
-        preprocess_dataset(
-            *cli_split_command(com)[:3],
-            int(cli_split_command(com)[3])
-        )
+        preprocess_dataset(*cli_split_command(com)[:3], int(cli_split_command(com)[3]))
     )
     print("Mangio-RVC-Fork Pre-process: Finished")
 
+
 def cli_extract_feature(com):
-    model_name, gpus, num_processes, has_pitch_guidance, f0_method, crepe_hop_length, version = cli_split_command(com)
+    (
+        model_name,
+        gpus,
+        num_processes,
+        has_pitch_guidance,
+        f0_method,
+        crepe_hop_length,
+        version,
+    ) = cli_split_command(com)
 
     num_processes = int(num_processes)
-    has_pitch_guidance = bool(int(has_pitch_guidance)) 
+    has_pitch_guidance = bool(int(has_pitch_guidance))
     crepe_hop_length = int(crepe_hop_length)
 
     print(
@@ -979,16 +1258,17 @@ def cli_extract_feature(com):
         "Mangio-RVC-Fork Feature Extraction: Starting..."
     )
     generator = extract_f0_feature(
-        gpus, 
-        num_processes, 
-        f0_method, 
-        has_pitch_guidance, 
-        model_name, 
-        version, 
-        crepe_hop_length
+        gpus,
+        num_processes,
+        f0_method,
+        has_pitch_guidance,
+        model_name,
+        version,
+        crepe_hop_length,
     )
     execute_generator_function(generator)
     print("Mangio-RVC-Fork Feature Extraction: Finished")
+
 
 def cli_train(com):
     com = cli_split_command(com)
@@ -998,129 +1278,130 @@ def cli_train(com):
     version = com[11]
 
     pretrained_base = "pretrained/" if version == "v1" else "pretrained_v2/"
-    
+
     g_pretrained_path = f"{pretrained_base}f0G{sample_rate}.pth"
     d_pretrained_path = f"{pretrained_base}f0D{sample_rate}.pth"
 
     print("Mangio-RVC-Fork Train-CLI: Training...")
-    click_train(model_name, sample_rate, *bool_flags, g_pretrained_path, d_pretrained_path, version)
+    click_train(
+        model_name,
+        sample_rate,
+        *bool_flags,
+        g_pretrained_path,
+        d_pretrained_path,
+        version,
+    )
+
 
 def cli_train_feature(com):
-    output_message = 'Mangio-RVC-Fork Train Feature Index-CLI'
+    output_message = "Mangio-RVC-Fork Train Feature Index-CLI"
     print(f"{output_message}: Training... Please wait")
     execute_generator_function(train_index(*cli_split_command(com)))
     print(f"{output_message}: Done!")
 
+
 def cli_extract_model(com):
     extract_small_model_process = extract_small_model(*cli_split_command(com))
     print(
-        "Mangio-RVC-Fork Extract Small Model: Success!" 
-        if extract_small_model_process == "Success." 
+        "Mangio-RVC-Fork Extract Small Model: Success!"
+        if extract_small_model_process == "Success."
         else f"{extract_small_model_process}\nMangio-RVC-Fork Extract Small Model: Failed!"
     )
+
 
 def preset_apply(preset, qfer, tmbr):
     if preset:
         try:
-            with open(preset, 'r') as p:
-                content = p.read().splitlines()  
+            with open(preset, "r") as p:
+                content = p.read().splitlines()
             qfer, tmbr = content[0], content[1]
             formant_apply(qfer, tmbr)
         except IndexError:
             print("Error: File does not have enough lines to read 'qfer' and 'tmbr'")
         except FileNotFoundError:
             print("Error: File does not exist")
-        except Exception as e: 
+        except Exception as e:
             print("An unexpected error occurred", e)
 
-    return ({"value": qfer, "__type__": "update"}, {"value": tmbr, "__type__": "update"})
+    return (
+        {"value": qfer, "__type__": "update"},
+        {"value": tmbr, "__type__": "update"},
+    )
+
 
 def print_page_details():
     page_description = {
-
-        'HOME':
-            "\n    go home            : Takes you back to home with a navigation list."
-            "\n    go infer           : Takes you to inference command execution."
-            "\n    go pre-process     : Takes you to training step.1) pre-process command execution."
-            "\n    go extract-feature : Takes you to training step.2) extract-feature command execution."
-            "\n    go train           : Takes you to training step.3) being or continue training command execution."
-            "\n    go train-feature   : Takes you to the train feature index command execution."
-            "\n    go extract-model   : Takes you to the extract small model command execution."
-
-        , 'INFER': 
-            "\n    arg 1) model name with .pth in ./weights: mi-test.pth"
-            "\n    arg 2) source audio path: myFolder\\MySource.wav"
-            "\n    arg 3) output file name to be placed in './audio-outputs': MyTest.wav"
-            "\n    arg 4) feature index file path: logs/mi-test/added_IVF3042_Flat_nprobe_1.index"
-            "\n    arg 5) speaker id: 0"
-            "\n    arg 6) transposition: 0"
-            "\n    arg 7) f0 method: harvest (pm, harvest, crepe, crepe-tiny, hybrid[x,x,x,x], mangio-crepe, mangio-crepe-tiny, rmvpe)"
-            "\n    arg 8) crepe hop length: 160"
-            "\n    arg 9) harvest median filter radius: 3 (0-7)"
-            "\n    arg 10) post resample rate: 0"
-            "\n    arg 11) mix volume envelope: 1"
-            "\n    arg 12) feature index ratio: 0.78 (0-1)"
-            "\n    arg 13) Voiceless Consonant Protection (Less Artifact): 0.33 (Smaller number = more protection. 0.50 means Dont Use.)"
-            "\n    arg 14) Whether to formant shift the inference audio before conversion: False (if set to false, you can ignore setting the quefrency and timbre values for formanting)"
-            "\n    arg 15)* Quefrency for formanting: 8.0 (no need to set if arg14 is False/false)"
-            "\n    arg 16)* Timbre for formanting: 1.2 (no need to set if arg14 is False/false) \n"
-            "\nExample: mi-test.pth saudio/Sidney.wav myTest.wav logs/mi-test/added_index.index 0 -2 harvest 160 3 0 1 0.95 0.33 0.45 True 8.0 1.2"
-
-        , 'PRE-PROCESS':
-            "\n    arg 1) Model folder name in ./logs: mi-test"
-            "\n    arg 2) Trainset directory: mydataset (or) E:\\my-data-set"
-            "\n    arg 3) Sample rate: 40k (32k, 40k, 48k)"
-            "\n    arg 4) Number of CPU threads to use: 8 \n"
-            "\nExample: mi-test mydataset 40k 24"
-
-        , 'EXTRACT-FEATURE':
-            "\n    arg 1) Model folder name in ./logs: mi-test"
-            "\n    arg 2) Gpu card slot: 0 (0-1-2 if using 3 GPUs)"
-            "\n    arg 3) Number of CPU threads to use: 8"
-            "\n    arg 4) Has Pitch Guidance?: 1 (0 for no, 1 for yes)"
-            "\n    arg 5) f0 Method: harvest (pm, harvest, dio, crepe)"
-            "\n    arg 6) Crepe hop length: 128"
-            "\n    arg 7) Version for pre-trained models: v2 (use either v1 or v2)\n"
-            "\nExample: mi-test 0 24 1 harvest 128 v2"
-
-        , 'TRAIN':
-            "\n    arg 1) Model folder name in ./logs: mi-test"
-            "\n    arg 2) Sample rate: 40k (32k, 40k, 48k)"
-            "\n    arg 3) Has Pitch Guidance?: 1 (0 for no, 1 for yes)"
-            "\n    arg 4) speaker id: 0"
-            "\n    arg 5) Save epoch iteration: 50"
-            "\n    arg 6) Total epochs: 10000"
-            "\n    arg 7) Batch size: 8"
-            "\n    arg 8) Gpu card slot: 0 (0-1-2 if using 3 GPUs)"
-            "\n    arg 9) Save only the latest checkpoint: 0 (0 for no, 1 for yes)"
-            "\n    arg 10) Whether to cache training set to vram: 0 (0 for no, 1 for yes)"
-            "\n    arg 11) Save extracted small model every generation?: 0 (0 for no, 1 for yes)"
-            "\n    arg 12) Model architecture version: v2 (use either v1 or v2)\n"
-            "\nExample: mi-test 40k 1 0 50 10000 8 0 0 0 0 v2"
-
-        , 'TRAIN-FEATURE':
-            "\n    arg 1) Model folder name in ./logs: mi-test"
-            "\n    arg 2) Model architecture version: v2 (use either v1 or v2)\n"
-            "\nExample: mi-test v2"
-
-        , 'EXTRACT-MODEL':
-            "\n    arg 1) Model Path: logs/mi-test/G_168000.pth"
-            "\n    arg 2) Model save name: MyModel"
-            "\n    arg 3) Sample rate: 40k (32k, 40k, 48k)"
-            "\n    arg 4) Has Pitch Guidance?: 1 (0 for no, 1 for yes)"
-            '\n    arg 5) Model information: "My Model"'
-            "\n    arg 6) Model architecture version: v2 (use either v1 or v2)\n"
-            '\nExample: logs/mi-test/G_168000.pth MyModel 40k 1 "Created by Cole Mangio" v2'
-
+        "HOME": "\n    go home            : Takes you back to home with a navigation list."
+        "\n    go infer           : Takes you to inference command execution."
+        "\n    go pre-process     : Takes you to training step.1) pre-process command execution."
+        "\n    go extract-feature : Takes you to training step.2) extract-feature command execution."
+        "\n    go train           : Takes you to training step.3) being or continue training command execution."
+        "\n    go train-feature   : Takes you to the train feature index command execution."
+        "\n    go extract-model   : Takes you to the extract small model command execution.",
+        "INFER": "\n    arg 1) model name with .pth in ./weights: mi-test.pth"
+        "\n    arg 2) source audio path: myFolder\\MySource.wav"
+        "\n    arg 3) output file name to be placed in './audio-outputs': MyTest.wav"
+        "\n    arg 4) feature index file path: logs/mi-test/added_IVF3042_Flat_nprobe_1.index"
+        "\n    arg 5) speaker id: 0"
+        "\n    arg 6) transposition: 0"
+        "\n    arg 7) f0 method: harvest (pm, harvest, crepe, crepe-tiny, hybrid[x,x,x,x], mangio-crepe, mangio-crepe-tiny, rmvpe)"
+        "\n    arg 8) crepe hop length: 160"
+        "\n    arg 9) harvest median filter radius: 3 (0-7)"
+        "\n    arg 10) post resample rate: 0"
+        "\n    arg 11) mix volume envelope: 1"
+        "\n    arg 12) feature index ratio: 0.78 (0-1)"
+        "\n    arg 13) Voiceless Consonant Protection (Less Artifact): 0.33 (Smaller number = more protection. 0.50 means Dont Use.)"
+        "\n    arg 14) Whether to formant shift the inference audio before conversion: False (if set to false, you can ignore setting the quefrency and timbre values for formanting)"
+        "\n    arg 15)* Quefrency for formanting: 8.0 (no need to set if arg14 is False/false)"
+        "\n    arg 16)* Timbre for formanting: 1.2 (no need to set if arg14 is False/false) \n"
+        "\nExample: mi-test.pth saudio/Sidney.wav myTest.wav logs/mi-test/added_index.index 0 -2 harvest 160 3 0 1 0.95 0.33 0.45 True 8.0 1.2",
+        "PRE-PROCESS": "\n    arg 1) Model folder name in ./logs: mi-test"
+        "\n    arg 2) Trainset directory: mydataset (or) E:\\my-data-set"
+        "\n    arg 3) Sample rate: 40k (32k, 40k, 48k)"
+        "\n    arg 4) Number of CPU threads to use: 8 \n"
+        "\nExample: mi-test mydataset 40k 24",
+        "EXTRACT-FEATURE": "\n    arg 1) Model folder name in ./logs: mi-test"
+        "\n    arg 2) Gpu card slot: 0 (0-1-2 if using 3 GPUs)"
+        "\n    arg 3) Number of CPU threads to use: 8"
+        "\n    arg 4) Has Pitch Guidance?: 1 (0 for no, 1 for yes)"
+        "\n    arg 5) f0 Method: harvest (pm, harvest, dio, crepe)"
+        "\n    arg 6) Crepe hop length: 128"
+        "\n    arg 7) Version for pre-trained models: v2 (use either v1 or v2)\n"
+        "\nExample: mi-test 0 24 1 harvest 128 v2",
+        "TRAIN": "\n    arg 1) Model folder name in ./logs: mi-test"
+        "\n    arg 2) Sample rate: 40k (32k, 40k, 48k)"
+        "\n    arg 3) Has Pitch Guidance?: 1 (0 for no, 1 for yes)"
+        "\n    arg 4) speaker id: 0"
+        "\n    arg 5) Save epoch iteration: 50"
+        "\n    arg 6) Total epochs: 10000"
+        "\n    arg 7) Batch size: 8"
+        "\n    arg 8) Gpu card slot: 0 (0-1-2 if using 3 GPUs)"
+        "\n    arg 9) Save only the latest checkpoint: 0 (0 for no, 1 for yes)"
+        "\n    arg 10) Whether to cache training set to vram: 0 (0 for no, 1 for yes)"
+        "\n    arg 11) Save extracted small model every generation?: 0 (0 for no, 1 for yes)"
+        "\n    arg 12) Model architecture version: v2 (use either v1 or v2)\n"
+        "\nExample: mi-test 40k 1 0 50 10000 8 0 0 0 0 v2",
+        "TRAIN-FEATURE": "\n    arg 1) Model folder name in ./logs: mi-test"
+        "\n    arg 2) Model architecture version: v2 (use either v1 or v2)\n"
+        "\nExample: mi-test v2",
+        "EXTRACT-MODEL": "\n    arg 1) Model Path: logs/mi-test/G_168000.pth"
+        "\n    arg 2) Model save name: MyModel"
+        "\n    arg 3) Sample rate: 40k (32k, 40k, 48k)"
+        "\n    arg 4) Has Pitch Guidance?: 1 (0 for no, 1 for yes)"
+        '\n    arg 5) Model information: "My Model"'
+        "\n    arg 6) Model architecture version: v2 (use either v1 or v2)\n"
+        '\nExample: logs/mi-test/G_168000.pth MyModel 40k 1 "Created by Cole Mangio" v2',
     }
-    
-    print(page_description.get(cli_current_page, 'Invalid page'))
+
+    print(page_description.get(cli_current_page, "Invalid page"))
 
 
 def change_page(page):
     global cli_current_page
     cli_current_page = page
     return 0
+
+
 def execute_command(com):
     command_to_page = {
         "go home": "HOME",
@@ -1131,7 +1412,7 @@ def execute_command(com):
         "go train-feature": "TRAIN-FEATURE",
         "go extract-model": "EXTRACT-MODEL",
     }
-    
+
     page_to_function = {
         "INFER": cli_infer,
         "PRE-PROCESS": cli_pre_process,
@@ -1143,7 +1424,7 @@ def execute_command(com):
 
     if com in command_to_page:
         return change_page(command_to_page[com])
-    
+
     if com[:3] == "go ":
         print(f"page '{com[3:]}' does not exist!")
         return 0
@@ -1151,25 +1432,29 @@ def execute_command(com):
     if cli_current_page in page_to_function:
         page_to_function[cli_current_page](com)
 
+
 def cli_navigation_loop():
     while True:
         print(f"\nYou are currently in '{cli_current_page}':")
         print_page_details()
         print(f"{cli_current_page}: ", end="")
-        try: execute_command(input())
-        except Exception as e: print(f"An error occurred: {traceback.format_exc()}")
+        try:
+            execute_command(input())
+        except Exception as e:
+            print(f"An error occurred: {traceback.format_exc()}")
 
-if(config.is_cli):
+
+if config.is_cli:
     print(
         "\n\nMangio-RVC-Fork v2 CLI App!\n"
         "Welcome to the CLI version of RVC. Please read the documentation on https://github.com/Mangio621/Mangio-RVC-Fork (README.MD) to understand how to use this app.\n"
     )
     cli_navigation_loop()
 
-#endregion
+# endregion
 
-#region RVC WebUI App
-'''
+# region RVC WebUI App
+"""
 def get_presets():
     data = None
     with open('../inference-presets.json', 'r') as file:
@@ -1179,34 +1464,36 @@ def get_presets():
         preset_names.append(preset['name'])
     
     return preset_names
-'''
+"""
+
 
 def switch_pitch_controls(f0method0):
-    is_visible = f0method0 != 'rmvpe'
+    is_visible = f0method0 != "rmvpe"
 
     if rvc_globals.NotesOrHertz:
         return (
             {"visible": False, "__type__": "update"},
             {"visible": is_visible, "__type__": "update"},
             {"visible": False, "__type__": "update"},
-            {"visible": is_visible, "__type__": "update"}
+            {"visible": is_visible, "__type__": "update"},
         )
     else:
         return (
             {"visible": is_visible, "__type__": "update"},
             {"visible": False, "__type__": "update"},
             {"visible": is_visible, "__type__": "update"},
-            {"visible": False, "__type__": "update"}
+            {"visible": False, "__type__": "update"},
         )
 
+
 def match_index(sid0: str) -> tuple:
-    sid0strip = re.sub(r'\.pth|\.onnx$', '', sid0)
+    sid0strip = re.sub(r"\.pth|\.onnx$", "", sid0)
 
     sid0strip = os.path.split(sid0strip)[-1]
 
-    base_model_name = sid0strip.rsplit('_', 2)[0]
+    base_model_name = sid0strip.rsplit("_", 2)[0]
     sid_directory = os.path.join(index_root, base_model_name)
-    
+
     directories_to_search = [sid_directory] if os.path.exists(sid_directory) else []
     directories_to_search.append(index_root)
 
@@ -1214,80 +1501,114 @@ def match_index(sid0: str) -> tuple:
 
     for directory in directories_to_search:
         for filename in os.listdir(directory):
-            if filename.endswith('.index') and 'trained' not in filename and any(name.lower() in filename.lower() for name in [sid0strip, base_model_name]):
+            if (
+                filename.endswith(".index")
+                and "trained" not in filename
+                and any(
+                    name.lower() in filename.lower()
+                    for name in [sid0strip, base_model_name]
+                )
+            ):
                 index_path = os.path.join(directory, filename)
                 if index_path in indexes_list:
-                    matching_index_files.append((index_path, os.path.getsize(index_path), ' ' not in filename))
+                    matching_index_files.append(
+                        (index_path, os.path.getsize(index_path), " " not in filename)
+                    )
 
     if matching_index_files:
         # Sort by favoring files without spaces and by size (largest size first)
         matching_index_files.sort(key=lambda x: (-x[2], -x[1]))
         best_match_index_path = matching_index_files[0][0]
         return best_match_index_path, best_match_index_path
-                
-    return '', ''
+
+    return "", ""
+
 
 def stoptraining(mim):
     if mim:
         try:
-            with open('csvdb/stop.csv', 'w+') as file: file.write("True")
+            with open("csvdb/stop.csv", "w+") as file:
+                file.write("True")
             os.kill(PID, SIGTERM)
         except Exception as e:
             print(f"Couldn't click due to {e}")
         return (
-            {"visible": True , "__type__": "update"},
-            {"visible": False, "__type__": "update"})
+            {"visible": True, "__type__": "update"},
+            {"visible": False, "__type__": "update"},
+        )
     return (
         {"visible": False, "__type__": "update"},
-        {"visible": True , "__type__": "update"})
+        {"visible": True, "__type__": "update"},
+    )
+
 
 tab_faq = i18n("常见问题解答")
 faq_file = "docs/faq.md" if tab_faq == "常见问题解答" else "docs/faq_en.md"
-weights_dir = 'weights/'
+weights_dir = "weights/"
+
 
 def note_to_hz(note_name):
-    SEMITONES = {'C': -9, 'C#': -8, 'D': -7, 'D#': -6, 'E': -5, 'F': -4, 'F#': -3, 'G': -2, 'G#': -1, 'A': 0, 'A#': 1, 'B': 2}
+    SEMITONES = {
+        "C": -9,
+        "C#": -8,
+        "D": -7,
+        "D#": -6,
+        "E": -5,
+        "F": -4,
+        "F#": -3,
+        "G": -2,
+        "G#": -1,
+        "A": 0,
+        "A#": 1,
+        "B": 2,
+    }
     pitch_class, octave = note_name[:-1], int(note_name[-1])
     semitone = SEMITONES[pitch_class]
     note_number = 12 * (octave - 4) + semitone
-    frequency = 440.0 * (2.0 ** (1.0/12)) ** note_number
+    frequency = 440.0 * (2.0 ** (1.0 / 12)) ** note_number
     return frequency
-    
+
+
 def save_to_wav2(dropbox):
     file_path = dropbox.name
-    target_path = os.path.join('audios', os.path.basename(file_path))
+    target_path = os.path.join("audios", os.path.basename(file_path))
 
     if os.path.exists(target_path):
         os.remove(target_path)
-        print('Replacing old dropdown file...')
+        print("Replacing old dropdown file...")
 
     shutil.move(file_path, target_path)
     return target_path
-    
+
+
 def change_choices2():
     return ""
 
 
-
 def GradioSetup(UTheme=gr.themes.Soft()):
-
-    with gr.Blocks(theme=UTheme, title='Mangio-RVC-Web 💻') as app:
+    with gr.Blocks(theme=UTheme, title="Mangio-RVC-Web 💻") as app:
         gr.HTML("<h1> The Mangio-RVC-Fork 💻 </h1>")
         # gr.Markdown(
         #     value=i18n(
         #         "本软件以MIT协议开源, 作者不对软件具备任何控制力, 使用软件者、传播软件导出的声音者自负全责. <br>如不认可该条款, 则不能使用或引用软件包内任何代码和文件. 详见根目录<b>使用需遵守的协议-LICENSE.txt</b>."
         #     )
-        #)
+        # )
         with gr.Tabs():
             with gr.TabItem(i18n("模型推理")):
                 with gr.Row():
-                    sid0 = gr.Dropdown(label=i18n("推理音色"), choices=sorted(names), value='')
+                    sid0 = gr.Dropdown(
+                        label=i18n("推理音色"), choices=sorted(names), value=""
+                    )
                     refresh_button = gr.Button(i18n("Refresh Files"), variant="primary")
                     clean_button = gr.Button(i18n("卸载音色省显存"), variant="primary")
-                    clean_button.click(fn=lambda: ({"value": "", "__type__": "update"}), inputs=[], outputs=[sid0])
-                
+                    clean_button.click(
+                        fn=lambda: ({"value": "", "__type__": "update"}),
+                        inputs=[],
+                        outputs=[sid0],
+                    )
+
                 with gr.TabItem("Single"):
-                    with gr.Row(): 
+                    with gr.Row():
                         spk_item = gr.Slider(
                             minimum=0,
                             maximum=2333,
@@ -1297,30 +1618,48 @@ def GradioSetup(UTheme=gr.themes.Soft()):
                             visible=False,
                             interactive=True,
                         )
-                        #clean_button.click(fn=lambda: ({"value": "", "__type__": "update"}), inputs=[], outputs=[sid0])
+                        # clean_button.click(fn=lambda: ({"value": "", "__type__": "update"}), inputs=[], outputs=[sid0])
 
-                    with gr.Group(): # Defines whole single inference option section
+                    with gr.Group():  # Defines whole single inference option section
                         with gr.Row():
-                            with gr.Column(): # First column for audio-related inputs
-                                dropbox = gr.File(label="Drop your audio here & hit the Refresh button")
+                            with gr.Column():  # First column for audio-related inputs
+                                dropbox = gr.File(
+                                    label="Drop your audio here & hit the Refresh button"
+                                )
                                 input_audio0 = gr.Textbox(
-                                    label=i18n("Manual path to the audio file to be processed"),
+                                    label=i18n(
+                                        "Manual path to the audio file to be processed"
+                                    ),
                                     value=os.path.join(now_dir, "audios", "audio.wav"),
                                 )
                                 input_audio1 = gr.Dropdown(
-                                    label=i18n("Or instead select a file from the /audios/ folder"),
+                                    label=i18n(
+                                        "Or instead select a file from the /audios/ folder"
+                                    ),
                                     choices=sorted(audio_paths),
-                                    value='',
+                                    value="",
                                     interactive=True,
                                 )
-                                
-                                input_audio1.select(fn=lambda:'',inputs=[],outputs=[input_audio0])
-                                input_audio0.input(fn=lambda:'',inputs=[],outputs=[input_audio1])
-                                
-                                dropbox.upload(fn=save_to_wav2, inputs=[dropbox], outputs=[input_audio0])
-                                dropbox.upload(fn=change_choices2, inputs=[], outputs=[input_audio1])
 
-                            with gr.Column(): # Second column for pitch shift and other options
+                                input_audio1.select(
+                                    fn=lambda: "", inputs=[], outputs=[input_audio0]
+                                )
+                                input_audio0.input(
+                                    fn=lambda: "", inputs=[], outputs=[input_audio1]
+                                )
+
+                                dropbox.upload(
+                                    fn=save_to_wav2,
+                                    inputs=[dropbox],
+                                    outputs=[input_audio0],
+                                )
+                                dropbox.upload(
+                                    fn=change_choices2,
+                                    inputs=[],
+                                    outputs=[input_audio1],
+                                )
+
+                            with gr.Column():  # Second column for pitch shift and other options
                                 file_index2 = gr.Dropdown(
                                     label="Detected path to your added.index file (adjust it wasn't automatically found)",
                                     choices=get_indexes(),
@@ -1335,29 +1674,43 @@ def GradioSetup(UTheme=gr.themes.Soft()):
                                     interactive=True,
                                 )
                                 refresh_button.click(
-                                    fn=change_choices, inputs=[], outputs=[sid0, file_index2, input_audio1]
+                                    fn=change_choices,
+                                    inputs=[],
+                                    outputs=[sid0, file_index2, input_audio1],
                                 )
                                 with gr.Column():
                                     vc_transform0 = gr.Number(
                                         label=i18n("变调(整数, 半音数量, 升八度12降八度-12)"), value=0
                                     )
-        
+
                     # Create a checkbox for advanced settings
                     advanced_settings_checkbox = gr.Checkbox(
                         value=False,
                         label="Show Advanced Settings",
                         interactive=True,
                     )
-                    
-                    # Advanced settings container        
-                    with gr.Column(visible=False) as advanced_settings: # Initially hidden
-                        with gr.Row(label = "Advanced Settings", open = False):
+
+                    # Advanced settings container
+                    with gr.Column(
+                        visible=False
+                    ) as advanced_settings:  # Initially hidden
+                        with gr.Row(label="Advanced Settings", open=False):
                             with gr.Column():
                                 f0method0 = gr.Radio(
                                     label=i18n(
                                         "选择音高提取算法,输入歌声可用pm提速,harvest低音好但巨慢无比,crepe效果好但吃GPU"
                                     ),
-                                    choices=["pm", "harvest", "dio", "crepe", "crepe-tiny", "mangio-crepe", "mangio-crepe-tiny", "rmvpe", "rmvpe+"], 
+                                    choices=[
+                                        "pm",
+                                        "harvest",
+                                        "dio",
+                                        "crepe",
+                                        "crepe-tiny",
+                                        "mangio-crepe",
+                                        "mangio-crepe-tiny",
+                                        "rmvpe",
+                                        "rmvpe+",
+                                    ],
                                     value="rmvpe+",
                                     interactive=True,
                                 )
@@ -1373,48 +1726,54 @@ def GradioSetup(UTheme=gr.themes.Soft()):
                                 filter_radius0 = gr.Slider(
                                     minimum=0,
                                     maximum=7,
-                                    label=i18n(">=3则使用对harvest音高识别的结果使用中值滤波，数值为滤波半径，使用可以削弱哑音"),
+                                    label=i18n(
+                                        ">=3则使用对harvest音高识别的结果使用中值滤波，数值为滤波半径，使用可以削弱哑音"
+                                    ),
                                     value=3,
                                     step=1,
                                     interactive=True,
-                                )    
+                                )
 
                                 minpitch_slider = gr.Slider(
-                                    label       = "Min pitch",
-                                    info        = "Specify minimal pitch for inference [HZ]",
-                                    step        = 0.1,
-                                    minimum     = 1,
-                                    scale       = 0,
-                                    value       = 50,
-                                    maximum     = 16000,
-                                    interactive = True,
-                                    visible     = (not rvc_globals.NotesOrHertz) and (f0method0.value != 'rmvpe'),
+                                    label="Min pitch",
+                                    info="Specify minimal pitch for inference [HZ]",
+                                    step=0.1,
+                                    minimum=1,
+                                    scale=0,
+                                    value=50,
+                                    maximum=16000,
+                                    interactive=True,
+                                    visible=(not rvc_globals.NotesOrHertz)
+                                    and (f0method0.value != "rmvpe"),
                                 )
                                 minpitch_txtbox = gr.Textbox(
-                                    label       = "Min pitch",
-                                    info        = "Specify minimal pitch for inference [NOTE][OCTAVE]",
-                                    placeholder = "C5",
-                                    visible     = (rvc_globals.NotesOrHertz) and (f0method0.value != 'rmvpe'),
-                                    interactive = True,
+                                    label="Min pitch",
+                                    info="Specify minimal pitch for inference [NOTE][OCTAVE]",
+                                    placeholder="C5",
+                                    visible=(rvc_globals.NotesOrHertz)
+                                    and (f0method0.value != "rmvpe"),
+                                    interactive=True,
                                 )
 
                                 maxpitch_slider = gr.Slider(
-                                    label       = "Max pitch",
-                                    info        = "Specify max pitch for inference [HZ]",
-                                    step        = 0.1,
-                                    minimum     = 1,
-                                    scale       = 0,
-                                    value       = 1100,
-                                    maximum     = 16000,
-                                    interactive = True,
-                                    visible     = (not rvc_globals.NotesOrHertz) and (f0method0.value != 'rmvpe'),
+                                    label="Max pitch",
+                                    info="Specify max pitch for inference [HZ]",
+                                    step=0.1,
+                                    minimum=1,
+                                    scale=0,
+                                    value=1100,
+                                    maximum=16000,
+                                    interactive=True,
+                                    visible=(not rvc_globals.NotesOrHertz)
+                                    and (f0method0.value != "rmvpe"),
                                 )
                                 maxpitch_txtbox = gr.Textbox(
-                                    label       = "Max pitch",
-                                    info        = "Specify max pitch for inference [NOTE][OCTAVE]",
-                                    placeholder = "C6",
-                                    visible     = (rvc_globals.NotesOrHertz) and (f0method0.value != 'rmvpe'),
-                                    interactive = True,
+                                    label="Max pitch",
+                                    info="Specify max pitch for inference [NOTE][OCTAVE]",
+                                    placeholder="C6",
+                                    visible=(rvc_globals.NotesOrHertz)
+                                    and (f0method0.value != "rmvpe"),
+                                    interactive=True,
                                 )
 
                             with gr.Column():
@@ -1423,28 +1782,37 @@ def GradioSetup(UTheme=gr.themes.Soft()):
                                     value="",
                                     interactive=True,
                                 )
-                            
-                                with gr.Accordion(label = "f0 [Root pitch] File", open = False):
-                                    f0_file = gr.File(label=i18n("F0曲线文件, 可选, 一行一个音高, 代替默认F0及升降调"))
+
+                                with gr.Accordion(
+                                    label="f0 [Root pitch] File", open=False
+                                ):
+                                    f0_file = gr.File(
+                                        label=i18n("F0曲线文件, 可选, 一行一个音高, 代替默认F0及升降调")
+                                    )
 
                             f0method0.change(
                                 fn=lambda radio: (
                                     {
-                                        "visible": radio in ['mangio-crepe', 'mangio-crepe-tiny'],
-                                        "__type__": "update"
+                                        "visible": radio
+                                        in ["mangio-crepe", "mangio-crepe-tiny"],
+                                        "__type__": "update",
                                     }
                                 ),
                                 inputs=[f0method0],
-                                outputs=[crepe_hop_length]
+                                outputs=[crepe_hop_length],
                             )
 
                             f0method0.change(
                                 fn=switch_pitch_controls,
                                 inputs=[f0method0],
-                                outputs=[minpitch_slider, minpitch_txtbox,
-                                         maxpitch_slider, maxpitch_txtbox]
-                            )                            
-                            
+                                outputs=[
+                                    minpitch_slider,
+                                    minpitch_txtbox,
+                                    maxpitch_slider,
+                                    maxpitch_txtbox,
+                                ],
+                            )
+
                             with gr.Column():
                                 resample_sr0 = gr.Slider(
                                     minimum=0,
@@ -1478,32 +1846,32 @@ def GradioSetup(UTheme=gr.themes.Soft()):
                                     interactive=True,
                                     visible=True,
                                 )
-                                
+
                                 formant_preset = gr.Dropdown(
-                                    value='',
+                                    value="",
                                     choices=get_fshift_presets(),
-                                    label='Browse presets for formanting',
-                                    info='Presets are located in formantshiftcfg/ folder',
+                                    label="Browse presets for formanting",
+                                    info="Presets are located in formantshiftcfg/ folder",
                                     visible=bool(DoFormant),
                                 )
-                                
+
                                 formant_refresh_button = gr.Button(
-                                    value='\U0001f504',
+                                    value="\U0001f504",
                                     visible=bool(DoFormant),
-                                    variant='primary',
+                                    variant="primary",
                                 )
-                                
+
                                 qfrency = gr.Slider(
-                                        value=Quefrency,
-                                        info="Default value is 1.0",
-                                        label="Quefrency for formant shifting",
-                                        minimum=0.0,
-                                        maximum=16.0,
-                                        step=0.1,
-                                        visible=bool(DoFormant),
-                                        interactive=True,
+                                    value=Quefrency,
+                                    info="Default value is 1.0",
+                                    label="Quefrency for formant shifting",
+                                    minimum=0.0,
+                                    maximum=16.0,
+                                    step=0.1,
+                                    visible=bool(DoFormant),
+                                    interactive=True,
                                 )
-                                    
+
                                 tmbre = gr.Slider(
                                     value=Timbre,
                                     info="Default value is 1.0",
@@ -1514,13 +1882,38 @@ def GradioSetup(UTheme=gr.themes.Soft()):
                                     visible=bool(DoFormant),
                                     interactive=True,
                                 )
-                                frmntbut = gr.Button("Apply", variant="primary", visible=bool(DoFormant))
+                                frmntbut = gr.Button(
+                                    "Apply", variant="primary", visible=bool(DoFormant)
+                                )
 
-                            formant_preset.change(fn=preset_apply, inputs=[formant_preset, qfrency, tmbre], outputs=[qfrency, tmbre])
-                            
-                            formanting.change(fn=formant_enabled,inputs=[formanting,qfrency,tmbre],outputs=[formanting,qfrency,tmbre,frmntbut,formant_preset,formant_refresh_button])
-                            frmntbut.click(fn=formant_apply,inputs=[qfrency, tmbre], outputs=[qfrency, tmbre])
-                            formant_refresh_button.click(fn=update_fshift_presets,inputs=[formant_preset, qfrency, tmbre],outputs=[formant_preset, qfrency, tmbre])
+                            formant_preset.change(
+                                fn=preset_apply,
+                                inputs=[formant_preset, qfrency, tmbre],
+                                outputs=[qfrency, tmbre],
+                            )
+
+                            formanting.change(
+                                fn=formant_enabled,
+                                inputs=[formanting, qfrency, tmbre],
+                                outputs=[
+                                    formanting,
+                                    qfrency,
+                                    tmbre,
+                                    frmntbut,
+                                    formant_preset,
+                                    formant_refresh_button,
+                                ],
+                            )
+                            frmntbut.click(
+                                fn=formant_apply,
+                                inputs=[qfrency, tmbre],
+                                outputs=[qfrency, tmbre],
+                            )
+                            formant_refresh_button.click(
+                                fn=update_fshift_presets,
+                                inputs=[formant_preset, qfrency, tmbre],
+                                outputs=[formant_preset, qfrency, tmbre],
+                            )
 
                     # Function to toggle advanced settings
                     def toggle_advanced_settings(checkbox):
@@ -1530,16 +1923,18 @@ def GradioSetup(UTheme=gr.themes.Soft()):
                     advanced_settings_checkbox.change(
                         fn=toggle_advanced_settings,
                         inputs=[advanced_settings_checkbox],
-                        outputs=[advanced_settings]
-                    )                           
-                    
-                    but0 = gr.Button(i18n("转换"), variant="primary").style(full_width=True)
-                    
-                    with gr.Row(): # Defines output info + output audio download after conversion
+                        outputs=[advanced_settings],
+                    )
+
+                    but0 = gr.Button(i18n("转换"), variant="primary").style(
+                        full_width=True
+                    )
+
+                    with gr.Row():  # Defines output info + output audio download after conversion
                         vc_output1 = gr.Textbox(label=i18n("输出信息"))
                         vc_output2 = gr.Audio(label=i18n("输出音频(右下角三个点,点了可以下载)"))
 
-                    with gr.Group(): # I think this defines the big convert button
+                    with gr.Group():  # I think this defines the big convert button
                         with gr.Row():
                             but0.click(
                                 vc_single,
@@ -1558,24 +1953,29 @@ def GradioSetup(UTheme=gr.themes.Soft()):
                                     rms_mix_rate0,
                                     protect0,
                                     crepe_hop_length,
-                                    minpitch_slider, minpitch_txtbox,
-                                    maxpitch_slider, maxpitch_txtbox,
+                                    minpitch_slider,
+                                    minpitch_txtbox,
+                                    maxpitch_slider,
+                                    maxpitch_txtbox,
                                 ],
                                 [vc_output1, vc_output2],
                             )
-                           
-                    
+
                 with gr.TabItem("Batch"):
-                    with gr.Group(): # Markdown explanation of batch inference
+                    with gr.Group():  # Markdown explanation of batch inference
                         gr.Markdown(
-                            value=i18n("批量转换, 输入待转换音频文件夹, 或上传多个音频文件, 在指定文件夹(默认opt)下输出转换的音频. ")
+                            value=i18n(
+                                "批量转换, 输入待转换音频文件夹, 或上传多个音频文件, 在指定文件夹(默认opt)下输出转换的音频. "
+                            )
                         )
                         with gr.Row():
                             with gr.Column():
                                 vc_transform1 = gr.Number(
                                     label=i18n("变调(整数, 半音数量, 升八度12降八度-12)"), value=0
                                 )
-                                opt_input = gr.Textbox(label=i18n("指定输出文件夹"), value="opt")
+                                opt_input = gr.Textbox(
+                                    label=i18n("指定输出文件夹"), value="opt"
+                                )
                                 f0method1 = gr.Radio(
                                     label=i18n(
                                         "选择音高提取算法,输入歌声可用pm提速,harvest低音好但巨慢无比,crepe效果好但吃GPU"
@@ -1587,7 +1987,9 @@ def GradioSetup(UTheme=gr.themes.Soft()):
                                 filter_radius1 = gr.Slider(
                                     minimum=0,
                                     maximum=7,
-                                    label=i18n(">=3则使用对harvest音高识别的结果使用中值滤波，数值为滤波半径，使用可以削弱哑音"),
+                                    label=i18n(
+                                        ">=3则使用对harvest音高识别的结果使用中值滤波，数值为滤波半径，使用可以削弱哑音"
+                                    ),
                                     value=3,
                                     step=1,
                                     interactive=True,
@@ -1598,7 +2000,11 @@ def GradioSetup(UTheme=gr.themes.Soft()):
                                     choices=get_indexes(),
                                     interactive=True,
                                 )
-                                sid0.select(fn=match_index, inputs=[sid0], outputs=[file_index2, file_index4])
+                                sid0.select(
+                                    fn=match_index,
+                                    inputs=[sid0],
+                                    outputs=[file_index2, file_index4],
+                                )
                                 refresh_button.click(
                                     fn=lambda: change_choices()[1],
                                     inputs=[],
@@ -1643,11 +2049,14 @@ def GradioSetup(UTheme=gr.themes.Soft()):
                                     value=os.path.join(now_dir, "audios"),
                                 )
                                 inputs = gr.File(
-                                    file_count="multiple", label=i18n("也可批量输入音频文件, 二选一, 优先读文件夹")
+                                    file_count="multiple",
+                                    label=i18n("也可批量输入音频文件, 二选一, 优先读文件夹"),
                                 )
 
-                            with gr.Row(): # Advanced settings tab (for batch) 
-                                with gr.Accordion(label = "Advanced Settings", open = False):
+                            with gr.Row():  # Advanced settings tab (for batch)
+                                with gr.Accordion(
+                                    label="Advanced Settings", open=False
+                                ):
                                     with gr.Column():
                                         file_index3 = gr.Textbox(
                                             label=i18n("特征检索库文件路径,为空则使用下拉的选择结果"),
@@ -1655,9 +2064,17 @@ def GradioSetup(UTheme=gr.themes.Soft()):
                                             interactive=True,
                                         )
 
-                                    clean_button = gr.Button(i18n("卸载音色省显存"), variant="primary")
-                                    clean_button.click(fn=lambda: ({"value": "", "__type__": "update"}), inputs=[], outputs=[sid0])
-                            
+                                    clean_button = gr.Button(
+                                        i18n("卸载音色省显存"), variant="primary"
+                                    )
+                                    clean_button.click(
+                                        fn=lambda: (
+                                            {"value": "", "__type__": "update"}
+                                        ),
+                                        inputs=[],
+                                        outputs=[sid0],
+                                    )
+
                             with gr.Row():
                                 format1 = gr.Radio(
                                     label=i18n("导出文件格式"),
@@ -1685,8 +2102,12 @@ def GradioSetup(UTheme=gr.themes.Soft()):
                                     protect1,
                                     format1,
                                     crepe_hop_length,
-                                    minpitch_slider if (not rvc_globals.NotesOrHertz) else minpitch_txtbox,
-                                    maxpitch_slider if (not rvc_globals.NotesOrHertz) else maxpitch_txtbox,
+                                    minpitch_slider
+                                    if (not rvc_globals.NotesOrHertz)
+                                    else minpitch_txtbox,
+                                    maxpitch_slider
+                                    if (not rvc_globals.NotesOrHertz)
+                                    else maxpitch_txtbox,
                                 ],
                                 [vc_output3],
                             )
@@ -1695,7 +2116,7 @@ def GradioSetup(UTheme=gr.themes.Soft()):
                         inputs=[sid0, protect0, protect1],
                         outputs=[spk_item, protect0, protect1],
                     )
-            with gr.TabItem(i18n("伴奏人声分离&去混响&去回声")): # UVR section 
+            with gr.TabItem(i18n("伴奏人声分离&去混响&去回声")):  # UVR section
                 with gr.Group():
                     gr.Markdown(
                         value=i18n(
@@ -1717,13 +2138,16 @@ def GradioSetup(UTheme=gr.themes.Soft()):
                         with gr.Column():
                             dir_wav_input = gr.Textbox(
                                 label=i18n("输入待处理音频文件夹路径"),
-                                value=os.path.join(now_dir, "audios")
+                                value=os.path.join(now_dir, "audios"),
                             )
                             wav_inputs = gr.File(
-                                file_count="multiple", label=i18n("也可批量输入音频文件, 二选一, 优先读文件夹")
+                                file_count="multiple",
+                                label=i18n("也可批量输入音频文件, 二选一, 优先读文件夹"),
                             )
                         with gr.Column():
-                            model_choose = gr.Dropdown(label=i18n("模型"), choices=uvr5_names)
+                            model_choose = gr.Dropdown(
+                                label=i18n("模型"), choices=uvr5_names
+                            )
                             agg = gr.Slider(
                                 minimum=0,
                                 maximum=20,
@@ -1802,7 +2226,8 @@ def GradioSetup(UTheme=gr.themes.Soft()):
                     )
                     with gr.Row():
                         trainset_dir4 = gr.Textbox(
-                            label=i18n("输入训练文件夹路径"), value=os.path.join(now_dir, datasets_root)
+                            label=i18n("输入训练文件夹路径"),
+                            value=os.path.join(now_dir, datasets_root),
                         )
                         spk_id5 = gr.Slider(
                             minimum=0,
@@ -1815,10 +2240,14 @@ def GradioSetup(UTheme=gr.themes.Soft()):
                         but1 = gr.Button(i18n("处理数据"), variant="primary")
                         info1 = gr.Textbox(label=i18n("输出信息"), value="")
                         but1.click(
-                             preprocess_dataset, [trainset_dir4, exp_dir1, sr2, np7], [info1]
+                            preprocess_dataset,
+                            [trainset_dir4, exp_dir1, sr2, np7],
+                            [info1],
                         )
                 with gr.Group():
-                    gr.Markdown(value=i18n("step2b: 使用CPU提取音高(如果模型带音高), 使用GPU提取特征(选择卡号)"))
+                    gr.Markdown(
+                        value=i18n("step2b: 使用CPU提取音高(如果模型带音高), 使用GPU提取特征(选择卡号)")
+                    )
                     with gr.Row():
                         with gr.Column():
                             gpus6 = gr.Textbox(
@@ -1832,12 +2261,19 @@ def GradioSetup(UTheme=gr.themes.Soft()):
                                 label=i18n(
                                     "选择音高提取算法:输入歌声可用pm提速,高质量语音但CPU差可用dio提速,harvest质量更好但慢"
                                 ),
-                                choices=["pm", "harvest", "dio", "crepe", "mangio-crepe", "rmvpe"],
+                                choices=[
+                                    "pm",
+                                    "harvest",
+                                    "dio",
+                                    "crepe",
+                                    "mangio-crepe",
+                                    "rmvpe",
+                                ],
                                 # [ MANGIO ]: Fork feature: Crepe on f0 extraction for training.
                                 value="rmvpe",
                                 interactive=True,
                             )
-                            
+
                             extraction_crepe_hop_length = gr.Slider(
                                 minimum=1,
                                 maximum=512,
@@ -1847,22 +2283,33 @@ def GradioSetup(UTheme=gr.themes.Soft()):
                                 interactive=True,
                                 visible=False,
                             )
-                            
+
                             f0method8.change(
                                 fn=lambda radio: (
                                     {
-                                        "visible": radio in ['mangio-crepe', 'mangio-crepe-tiny'],
-                                        "__type__": "update"
+                                        "visible": radio
+                                        in ["mangio-crepe", "mangio-crepe-tiny"],
+                                        "__type__": "update",
                                     }
                                 ),
                                 inputs=[f0method8],
-                                outputs=[extraction_crepe_hop_length]
+                                outputs=[extraction_crepe_hop_length],
                             )
                         but2 = gr.Button(i18n("特征提取"), variant="primary")
-                        info2 = gr.Textbox(label=i18n("输出信息"), value="", max_lines=8, interactive=False)
+                        info2 = gr.Textbox(
+                            label=i18n("输出信息"), value="", max_lines=8, interactive=False
+                        )
                         but2.click(
                             extract_f0_feature,
-                            [gpus6, np7, f0method8, if_f0_3, exp_dir1, version19, extraction_crepe_hop_length],
+                            [
+                                gpus6,
+                                np7,
+                                f0method8,
+                                if_f0_3,
+                                exp_dir1,
+                                version19,
+                                extraction_crepe_hop_length,
+                            ],
                             [info2],
                         )
                 with gr.Group():
@@ -1932,45 +2379,54 @@ def GradioSetup(UTheme=gr.themes.Soft()):
                             [pretrained_G14, pretrained_D15, sr2],
                         )
                         if_f0_3.change(
-                                fn=change_f0,
-                                inputs=[if_f0_3, sr2, version19],
-                                outputs=[f0method8, pretrained_G14, pretrained_D15],
+                            fn=change_f0,
+                            inputs=[if_f0_3, sr2, version19],
+                            outputs=[f0method8, pretrained_G14, pretrained_D15],
                         )
-                        if_f0_3.change(fn=lambda radio: (
-                                    {
-                                        "visible": radio in ['mangio-crepe', 'mangio-crepe-tiny'],
-                                        "__type__": "update"
-                                    }
-                                ), inputs=[f0method8], outputs=[extraction_crepe_hop_length])
+                        if_f0_3.change(
+                            fn=lambda radio: (
+                                {
+                                    "visible": radio
+                                    in ["mangio-crepe", "mangio-crepe-tiny"],
+                                    "__type__": "update",
+                                }
+                            ),
+                            inputs=[f0method8],
+                            outputs=[extraction_crepe_hop_length],
+                        )
                         gpus16 = gr.Textbox(
                             label=i18n("以-分隔输入使用的卡号, 例如   0-1-2   使用卡0和卡1和卡2"),
                             value=gpus,
                             interactive=True,
                         )
                         butstop = gr.Button(
-                                "Stop Training",
-                                variant='primary',
-                                visible=False,
+                            "Stop Training",
+                            variant="primary",
+                            visible=False,
                         )
                         but3 = gr.Button(i18n("训练模型"), variant="primary", visible=True)
-                        but3.click(fn=stoptraining, inputs=[gr.Number(value=0, visible=False)], outputs=[but3, butstop])
-                        butstop.click(fn=stoptraining, inputs=[gr.Number(value=1, visible=False)], outputs=[but3, butstop])
-                        
-                        
+                        but3.click(
+                            fn=stoptraining,
+                            inputs=[gr.Number(value=0, visible=False)],
+                            outputs=[but3, butstop],
+                        )
+                        butstop.click(
+                            fn=stoptraining,
+                            inputs=[gr.Number(value=1, visible=False)],
+                            outputs=[but3, butstop],
+                        )
+
                         but4 = gr.Button(i18n("训练特征索引"), variant="primary")
                         info3 = gr.Textbox(label=i18n("输出信息"), value="", max_lines=10)
-                        
+
                         if_save_every_weights18.change(
                             fn=lambda if_save_every_weights: (
-                                {
-                                    "visible": if_save_every_weights,
-                                    "__type__": "update"
-                                }
+                                {"visible": if_save_every_weights, "__type__": "update"}
                             ),
                             inputs=[if_save_every_weights18],
-                            outputs=[save_epoch10]
+                            outputs=[save_epoch10],
                         )
-                        
+
                         but3.click(
                             click_train,
                             [
@@ -1991,65 +2447,90 @@ def GradioSetup(UTheme=gr.themes.Soft()):
                             ],
                             [info3, butstop, but3],
                         )
-                            
+
                         but4.click(train_index, [exp_dir1, version19], info3)
                 with gr.Group():
-                    gr.Markdown(value=
-                        'Step 4: Export lowest points on a graph of the model '
-                        'After clicking on Export lowest points of a model, '
-                        'The new files will be located in logs/[yourmodelname]/lowestvals/ folder'
+                    gr.Markdown(
+                        value="Step 4: Export lowest points on a graph of the model "
+                        "After clicking on Export lowest points of a model, "
+                        "The new files will be located in logs/[yourmodelname]/lowestvals/ folder"
                     )
-                    
+
                     with gr.Row():
-                        with gr.Accordion(label='Lowest points export'):
-                        
+                        with gr.Accordion(label="Lowest points export"):
                             lowestval_weight_dir = gr.Textbox(visible=False)
                             ds = gr.Textbox(visible=False)
                             weights_dir1 = gr.Textbox(visible=False, value=weights_dir)
-                            
-                                
+
                             with gr.Row():
                                 amntlastmdls = gr.Slider(
                                     minimum=1,
                                     maximum=25,
-                                    label='How many lowest points to save',
+                                    label="How many lowest points to save",
                                     value=3,
                                     step=1,
                                     interactive=True,
                                 )
                                 lpexport = gr.Button(
-                                    value='Export lowest points of a model',
-                                    variant='primary',
+                                    value="Export lowest points of a model",
+                                    variant="primary",
                                 )
                                 lw_mdls = gr.File(
                                     file_count="multiple",
                                     label="Output models",
                                     interactive=False,
-                                ) #####
-                                
+                                )  #####
+
                             with gr.Row():
-                                infolpex = gr.Textbox(label="Output information:", value="", max_lines=10)
-                                mdlbl = gr.Dataframe(label='Stats of selected models', datatype='number', type='pandas')
-                            
+                                infolpex = gr.Textbox(
+                                    label="Output information:", value="", max_lines=10
+                                )
+                                mdlbl = gr.Dataframe(
+                                    label="Stats of selected models",
+                                    datatype="number",
+                                    type="pandas",
+                                )
+
                             lpexport.click(
-                                lambda model_name: os.path.join("logs", model_name, "lowestvals"),
+                                lambda model_name: os.path.join(
+                                    "logs", model_name, "lowestvals"
+                                ),
                                 inputs=[exp_dir1],
-                                outputs=[lowestval_weight_dir]
+                                outputs=[lowestval_weight_dir],
                             )
-                            
-                            lpexport.click(fn=tensorlowest.main, inputs=[exp_dir1, save_epoch10, amntlastmdls], outputs=[ds])
-                            
+
+                            lpexport.click(
+                                fn=tensorlowest.main,
+                                inputs=[exp_dir1, save_epoch10, amntlastmdls],
+                                outputs=[ds],
+                            )
+
                             ds.change(
                                 fn=tensorlowest.selectweights,
-                                inputs=[exp_dir1, ds, weights_dir1, lowestval_weight_dir],
+                                inputs=[
+                                    exp_dir1,
+                                    ds,
+                                    weights_dir1,
+                                    lowestval_weight_dir,
+                                ],
                                 outputs=[infolpex, lw_mdls, mdlbl],
-                            )    
+                            )
             with gr.TabItem(i18n("ckpt处理")):
                 with gr.Group():
                     gr.Markdown(value=i18n("模型融合, 可用于测试音色融合"))
                     with gr.Row():
-                        ckpt_a = gr.Textbox(label=i18n("A模型路径"), value="", interactive=True, placeholder="Path to your model A.")
-                        ckpt_b = gr.Textbox(label=i18n("B模型路径"), value="", interactive=True, placeholder="Path to your model B.")
+                        ckpt_a = gr.Textbox(
+                            label=i18n("A模型路径"),
+                            value="",
+                            interactive=True,
+                            placeholder="Path to your model A.",
+                        )
+                        ckpt_b = gr.Textbox(
+                            label=i18n("B模型路径"),
+                            value="",
+                            interactive=True,
+                            placeholder="Path to your model B.",
+                        )
                         alpha_a = gr.Slider(
                             minimum=0,
                             maximum=1,
@@ -2070,7 +2551,11 @@ def GradioSetup(UTheme=gr.themes.Soft()):
                             interactive=True,
                         )
                         info__ = gr.Textbox(
-                            label=i18n("要置入的模型信息"), value="", max_lines=8, interactive=True, placeholder="Model information to be placed."
+                            label=i18n("要置入的模型信息"),
+                            value="",
+                            max_lines=8,
+                            interactive=True,
+                            placeholder="Model information to be placed.",
                         )
                         name_to_save0 = gr.Textbox(
                             label=i18n("保存的模型名不带后缀"),
@@ -2104,12 +2589,19 @@ def GradioSetup(UTheme=gr.themes.Soft()):
                     )  # def merge(path1,path2,alpha1,sr,f0,info):
                 with gr.Group():
                     gr.Markdown(value=i18n("修改模型信息(仅支持weights文件夹下提取的小模型文件)"))
-                    with gr.Row(): ######
+                    with gr.Row():  ######
                         ckpt_path0 = gr.Textbox(
-                            label=i18n("模型路径"), placeholder="Path to your Model.", value="", interactive=True
+                            label=i18n("模型路径"),
+                            placeholder="Path to your Model.",
+                            value="",
+                            interactive=True,
                         )
                         info_ = gr.Textbox(
-                            label=i18n("要改的模型信息"), value="", max_lines=8, interactive=True, placeholder="Model information to be changed."
+                            label=i18n("要改的模型信息"),
+                            value="",
+                            max_lines=8,
+                            interactive=True,
+                            placeholder="Model information to be changed.",
                         )
                         name_to_save1 = gr.Textbox(
                             label=i18n("保存的文件名, 默认空为和源文件同名"),
@@ -2126,7 +2618,10 @@ def GradioSetup(UTheme=gr.themes.Soft()):
                     gr.Markdown(value=i18n("查看模型信息(仅支持weights文件夹下提取的小模型文件)"))
                     with gr.Row():
                         ckpt_path1 = gr.Textbox(
-                            label=i18n("模型路径"), value="", interactive=True, placeholder="Model path here."
+                            label=i18n("模型路径"),
+                            value="",
+                            interactive=True,
+                            placeholder="Model path here.",
                         )
                         but8 = gr.Button(i18n("查看"), variant="primary")
                         info6 = gr.Textbox(label=i18n("输出信息"), value="", max_lines=8)
@@ -2141,11 +2636,15 @@ def GradioSetup(UTheme=gr.themes.Soft()):
                         ckpt_path2 = gr.Textbox(
                             lines=3,
                             label=i18n("模型路径"),
-                            value=os.path.join(now_dir, "logs", "[YOUR_MODEL]", "G_23333.pth"),
+                            value=os.path.join(
+                                now_dir, "logs", "[YOUR_MODEL]", "G_23333.pth"
+                            ),
                             interactive=True,
                         )
                         save_name = gr.Textbox(
-                            label=i18n("保存名"), value="", interactive=True,
+                            label=i18n("保存名"),
+                            value="",
+                            interactive=True,
                             placeholder="Your filename here.",
                         )
                         sr__ = gr.Radio(
@@ -2166,7 +2665,11 @@ def GradioSetup(UTheme=gr.themes.Soft()):
                             interactive=True,
                         )
                         info___ = gr.Textbox(
-                            label=i18n("要置入的模型信息"), value="", max_lines=8, interactive=True, placeholder="Model info here."
+                            label=i18n("要置入的模型信息"),
+                            value="",
+                            max_lines=8,
+                            interactive=True,
+                            placeholder="Model info here.",
                         )
                         but9 = gr.Button(i18n("提取"), variant="primary")
                         info7 = gr.Textbox(label=i18n("输出信息"), value="", max_lines=8)
@@ -2181,46 +2684,60 @@ def GradioSetup(UTheme=gr.themes.Soft()):
 
             with gr.TabItem(i18n("Onnx导出")):
                 with gr.Row():
-                    ckpt_dir = gr.Textbox(label=i18n("RVC模型路径"), value="", interactive=True, placeholder="RVC model path.")
+                    ckpt_dir = gr.Textbox(
+                        label=i18n("RVC模型路径"),
+                        value="",
+                        interactive=True,
+                        placeholder="RVC model path.",
+                    )
                 with gr.Row():
                     onnx_dir = gr.Textbox(
-                        label=i18n("Onnx输出路径"), value="", interactive=True, placeholder="Onnx model output path."
+                        label=i18n("Onnx输出路径"),
+                        value="",
+                        interactive=True,
+                        placeholder="Onnx model output path.",
                     )
                 with gr.Row():
                     infoOnnx = gr.Label(label="info")
                 with gr.Row():
                     butOnnx = gr.Button(i18n("导出Onnx模型"), variant="primary")
                 butOnnx.click(export_onnx, [ckpt_dir, onnx_dir], infoOnnx)
-            
+
             with gr.TabItem("Settings"):
                 with gr.Row():
-                    gr.Markdown(value=
-                                "Pitch settings"
-                                )
+                    gr.Markdown(value="Pitch settings")
                     noteshertz = gr.Checkbox(
-                        label       = "Whether to use note names instead of their hertz value. E.G. [C5, D6] instead of [523.25, 1174.66]Hz",
-                        value       = rvc_globals.NotesOrHertz,
-                        interactive = True,
+                        label="Whether to use note names instead of their hertz value. E.G. [C5, D6] instead of [523.25, 1174.66]Hz",
+                        value=rvc_globals.NotesOrHertz,
+                        interactive=True,
                     )
-            
-            noteshertz.change(fn=lambda nhertz: rvc_globals.__setattr__('NotesOrHertz', nhertz), inputs=[noteshertz], outputs=[])
+
+            noteshertz.change(
+                fn=lambda nhertz: rvc_globals.__setattr__("NotesOrHertz", nhertz),
+                inputs=[noteshertz],
+                outputs=[],
+            )
 
             noteshertz.change(
                 fn=switch_pitch_controls,
                 inputs=[f0method0],
                 outputs=[
-                    minpitch_slider, minpitch_txtbox,
-                    maxpitch_slider, maxpitch_txtbox,]
+                    minpitch_slider,
+                    minpitch_txtbox,
+                    maxpitch_slider,
+                    maxpitch_txtbox,
+                ],
             )
 
-            #with gr.TabItem(tab_faq):
-                #try:
-                    #with open(faq_file, "r", encoding="utf8") as f:
-                        #info = f.read()
-                    #gr.Markdown(value=info)
-                #except:
-                    #gr.Markdown(traceback.format_exc())
+            # with gr.TabItem(tab_faq):
+            # try:
+            # with open(faq_file, "r", encoding="utf8") as f:
+            # info = f.read()
+            # gr.Markdown(value=info)
+            # except:
+            # gr.Markdown(traceback.format_exc())
         return app
+
 
 def GradioRun(app):
     share_gradio_link = config.iscolab or config.paperspace
@@ -2235,7 +2752,8 @@ def GradioRun(app):
         share=share_gradio_link,
     )
 
-#endregion
+
+# endregion
 
 if __name__ == "__main__":
     app = GradioSetup(UTheme=config.grtheme)

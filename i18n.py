@@ -25,6 +25,7 @@ class I18nAuto:
 
     def __repr__(self):
         return "Use Language: " + self.language
+
     def print(self):
         """Prints the language currently in use."""
-        print(f"Using Language: {self.language}") 
+        print(f"Using Language: {self.language}")

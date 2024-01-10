@@ -2,7 +2,9 @@ import sys, torch, numpy as np, traceback, pdb
 import torch.nn as nn
 from time import time as ttime
 import torch.nn.functional as F
+
 torch.set_default_dtype(torch.float64)
+
 
 class BiGRU(nn.Module):
     def __init__(self, input_features, hidden_features, num_layers):
@@ -320,7 +322,9 @@ class MelSpectrogram(torch.nn.Module):
             if resize < size:
                 magnitude = F.pad(magnitude, (0, 0, 0, size - resize))
             magnitude = magnitude[:, :size, :] * self.win_length / win_length_new
-        mel_output = torch.matmul(self.mel_basis.to(torch.float64), magnitude.to(torch.float64))
+        mel_output = torch.matmul(
+            self.mel_basis.to(torch.float64), magnitude.to(torch.float64)
+        )
         if self.is_half == True:
             mel_output = mel_output.half()
         log_mel_spec = torch.log(torch.clamp(mel_output, min=self.clamp))
@@ -353,12 +357,14 @@ class RMVPE:
         with torch.no_grad():
             n_frames = mel.shape[-1]
             mel = F.pad(
-                mel, (0, 64 * ((n_frames - 1) // 64 + 1) - n_frames), mode="reflect"        ##########32 to 64 testing
+                mel,
+                (0, 64 * ((n_frames - 1) // 64 + 1) - n_frames),
+                mode="reflect",  ##########32 to 64 testing
             )
             hidden = self.model(mel)
             return hidden[:, :n_frames]
 
-    def decode(self, hidden, thred=0.2): #replaced from .03
+    def decode(self, hidden, thred=0.2):  # replaced from .03
         cents_pred = self.to_local_average_cents(hidden, thred=thred)
         f0 = 10 * (2 ** (cents_pred / 1200))
         f0[f0 == 10] = 0
@@ -366,8 +372,13 @@ class RMVPE:
         return f0
 
     def infer_from_audio(self, audio, thred=0.2):
-        audio = torch.from_numpy(audio).float().to(self.device, dtype=torch.float64).unsqueeze(0)
-        #audio = torch.from_numpy(audio).float().to(self.device).unsqueeze(0)
+        audio = (
+            torch.from_numpy(audio)
+            .float()
+            .to(self.device, dtype=torch.float64)
+            .unsqueeze(0)
+        )
+        # audio = torch.from_numpy(audio).float().to(self.device).unsqueeze(0)
         mel = self.mel_extractor(audio, center=True)
         hidden = self.mel2hidden(mel)
         hidden = hidden.squeeze(0).cpu().numpy()
@@ -375,16 +386,21 @@ class RMVPE:
             hidden = hidden.astype("float32")
         f0 = self.decode(hidden, thred=thred)
         return f0
-    
+
     def infer_from_audio_with_pitch(self, audio, thred=0.2, f0_min=50, f0_max=1200):
-        audio = torch.from_numpy(audio).float().to(self.device,dtype=torch.float64).unsqueeze(0) #64bit
+        audio = (
+            torch.from_numpy(audio)
+            .float()
+            .to(self.device, dtype=torch.float64)
+            .unsqueeze(0)
+        )  # 64bit
         mel = self.mel_extractor(audio, center=True)
         hidden = self.mel2hidden(mel)
         hidden = hidden.squeeze(0).cpu().numpy()
         if self.is_half == True:
             hidden = hidden.astype("float32")
         f0 = self.decode(hidden, thred=thred)
-        f0[(f0 < f0_min) | (f0 > f0_max)] = 0  
+        f0[(f0 < f0_min) | (f0 > f0_max)] = 0
         return f0
 
     def to_local_average_cents(self, salience, thred=0.05):

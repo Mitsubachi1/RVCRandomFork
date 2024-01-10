@@ -18,7 +18,9 @@ sys.path.append(now_dir)
 
 from LazyImport import lazyload
 
-torchcrepe = lazyload("torchcrepe")  # Fork Feature. Crepe algo for training and preprocess
+torchcrepe = lazyload(
+    "torchcrepe"
+)  # Fork Feature. Crepe algo for training and preprocess
 torch = lazyload("torch")
 rmvpe = lazyload("rmvpe")
 
@@ -72,7 +74,7 @@ class VC(object):
             config.x_max,
             config.is_half,
         )
-        
+
         self.sr = 16000  # hubert输入采样率
         self.window = 160  # 每帧点数
         self.t_pad = self.sr * self.x_pad  # 每条前后pad时间
@@ -90,10 +92,11 @@ class VC(object):
             "rmvpe": self.get_rmvpe,
             "rmvpe+": self.get_pitch_dependant_rmvpe,
             "crepe": self.get_f0_official_crepe_computation,
-            "crepe-tiny": partial(self.get_f0_official_crepe_computation, model='model'),
+            "crepe-tiny": partial(
+                self.get_f0_official_crepe_computation, model="model"
+            ),
             "mangio-crepe": self.get_f0_crepe_computation,
-            "mangio-crepe-tiny": partial(self.get_f0_crepe_computation, model='model'),
-            
+            "mangio-crepe-tiny": partial(self.get_f0_crepe_computation, model="model"),
         }
 
     # Fork Feature: Get the best torch device to use for f0 algorithms that require a torch device. Will return the type (torch.device)
@@ -126,8 +129,8 @@ class VC(object):
         if audio.ndim == 2 and audio.shape[0] > 1:
             audio = torch.mean(audio, dim=0, keepdim=True).detach()
         audio = audio.detach()
-        hop_length = kwargs.get('crepe_hop_length', 160)
-        model = kwargs.get('model', 'full') 
+        hop_length = kwargs.get("crepe_hop_length", 160)
+        model = kwargs.get("model", "full")
         print("Initiating prediction with a crepe_hop_length of: " + str(hop_length))
         pitch: Tensor = torchcrepe.predict(
             audio,
@@ -151,20 +154,13 @@ class VC(object):
         )
         f0 = np.nan_to_num(target)
         return f0  # Resized f0
-    
-    def get_f0_official_crepe_computation(
-        self,
-        x,
-        f0_min,
-        f0_max,
-        *args,
-        **kwargs
-    ):
+
+    def get_f0_official_crepe_computation(self, x, f0_min, f0_max, *args, **kwargs):
         # Pick a batch size that doesn't cause memory errors on your gpu
         batch_size = 512
         # Compute pitch using first gpu
         audio = torch.tensor(np.copy(x))[None].float()
-        model = kwargs.get('model', 'full') 
+        model = kwargs.get("model", "full")
         f0, pd = torchcrepe.predict(
             audio,
             self.sr,
@@ -190,26 +186,35 @@ class VC(object):
         return f0
 
     def get_pm(self, x, p_len, *args, **kwargs):
-        f0 = parselmouth.Sound(x, self.sr).to_pitch_ac(
-            time_step=160 / 16000,
-            voicing_threshold=0.6,
-            pitch_floor=kwargs.get('f0_min'),
-            pitch_ceiling=kwargs.get('f0_max'),
-        ).selected_array["frequency"]
-        
+        f0 = (
+            parselmouth.Sound(x, self.sr)
+            .to_pitch_ac(
+                time_step=160 / 16000,
+                voicing_threshold=0.6,
+                pitch_floor=kwargs.get("f0_min"),
+                pitch_ceiling=kwargs.get("f0_max"),
+            )
+            .selected_array["frequency"]
+        )
+
         return np.pad(
             f0,
-            [[max(0, (p_len - len(f0) + 1) // 2), max(0, p_len - len(f0) - (p_len - len(f0) + 1) // 2)]],
-            mode="constant"
+            [
+                [
+                    max(0, (p_len - len(f0) + 1) // 2),
+                    max(0, p_len - len(f0) - (p_len - len(f0) + 1) // 2),
+                ]
+            ],
+            mode="constant",
         )
 
     def get_harvest(self, x, *args, **kwargs):
         f0_spectral = pyworld.harvest(
             x.astype(np.double),
             fs=self.sr,
-            f0_ceil=kwargs.get('f0_max'),
-            f0_floor=kwargs.get('f0_min'),
-            frame_period=1000 * kwargs.get('hop_length', 160) / self.sr,
+            f0_ceil=kwargs.get("f0_max"),
+            f0_floor=kwargs.get("f0_min"),
+            frame_period=1000 * kwargs.get("hop_length", 160) / self.sr,
         )
         return pyworld.stonemask(x.astype(np.double), *f0_spectral, self.sr)
 
@@ -217,18 +222,19 @@ class VC(object):
         f0_spectral = pyworld.dio(
             x.astype(np.double),
             fs=self.sr,
-            f0_ceil=kwargs.get('f0_max'),
-            f0_floor=kwargs.get('f0_min'),
-            frame_period=1000 * kwargs.get('hop_length', 160) / self.sr,
+            f0_ceil=kwargs.get("f0_max"),
+            f0_floor=kwargs.get("f0_min"),
+            frame_period=1000 * kwargs.get("hop_length", 160) / self.sr,
         )
         return pyworld.stonemask(x.astype(np.double), *f0_spectral, self.sr)
-
 
     def get_rmvpe(self, x, *args, **kwargs):
         return self.model_rmvpe.infer_from_audio(x, thred=0.03)
 
     def get_pitch_dependant_rmvpe(self, x, f0_min=1, f0_max=40000, *args, **kwargs):
-        return self.model_rmvpe.infer_from_audio_with_pitch(x, thred=0.03, f0_min=f0_min, f0_max=f0_max)
+        return self.model_rmvpe.infer_from_audio_with_pitch(
+            x, thred=0.03, f0_min=f0_min, f0_max=f0_max
+        )
 
     # Fork Feature: Acquire median hybrid f0 estimation calculation
     def get_f0_hybrid_computation(
@@ -241,16 +247,22 @@ class VC(object):
         p_len,
         filter_radius,
         crepe_hop_length,
-        time_step
+        time_step,
     ):
         # Get various f0 methods from input to use in the computation stack
-        params = {'x': x, 'p_len': p_len, 'f0_min': f0_min, 
-          'f0_max': f0_max, 'time_step': time_step, 'filter_radius': filter_radius, 
-          'crepe_hop_length': crepe_hop_length, 'model': "full"
+        params = {
+            "x": x,
+            "p_len": p_len,
+            "f0_min": f0_min,
+            "f0_max": f0_max,
+            "time_step": time_step,
+            "filter_radius": filter_radius,
+            "crepe_hop_length": crepe_hop_length,
+            "model": "full",
         }
-        methods_str = re.search('hybrid\[(.+)\]', methods_str)
+        methods_str = re.search("hybrid\[(.+)\]", methods_str)
         if methods_str:  # Ensure a match was found
-            methods = [method.strip() for method in methods_str.group(1).split('+')]
+            methods = [method.strip() for method in methods_str.group(1).split("+")]
         f0_computation_stack = []
 
         print(f"Calculating f0 pitch estimations for methods: {str(methods)}")
@@ -263,7 +275,7 @@ class VC(object):
                 print(f"Method {method} not found.")
                 continue
             f0 = self.f0_method_dict[method](**params)
-            if method == 'harvest' and filter_radius > 2:
+            if method == "harvest" and filter_radius > 2:
                 f0 = signal.medfilt(f0, 3)
                 f0 = f0[1:]  # Get rid of first frame.
             f0_computation_stack.append(f0)
@@ -292,9 +304,16 @@ class VC(object):
         time_step = self.window / self.sr * 1000
         f0_mel_min = 1127 * np.log(1 + f0_min / 700)
         f0_mel_max = 1127 * np.log(1 + f0_max / 700)
-        params = {'x': x, 'p_len': p_len, 'f0_up_key': f0_up_key, 'f0_min': f0_min, 
-          'f0_max': f0_max, 'time_step': time_step, 'filter_radius': filter_radius, 
-          'crepe_hop_length': crepe_hop_length, 'model': "full"
+        params = {
+            "x": x,
+            "p_len": p_len,
+            "f0_up_key": f0_up_key,
+            "f0_min": f0_min,
+            "f0_max": f0_max,
+            "time_step": time_step,
+            "filter_radius": filter_radius,
+            "crepe_hop_length": crepe_hop_length,
+            "model": "full",
         }
         f0 = self.f0_method_dict[f0_method](**params)
 
@@ -302,8 +321,8 @@ class VC(object):
             # Perform hybrid median pitch estimation
             input_audio_path2wav[input_audio_path] = x.astype(np.double)
             f0 = self.get_f0_hybrid_computation(
-                f0_method,+
-                input_audio_path,
+                f0_method,
+                +input_audio_path,
                 x,
                 f0_min,
                 f0_max,
@@ -327,7 +346,7 @@ class VC(object):
             f0[self.x_pad * tf0 : self.x_pad * tf0 + len(replace_f0)] = replace_f0[
                 :shape
             ]
-        
+
         f0bak = f0.copy()
         f0_mel = 1127 * np.log(1 + f0 / 700)
         f0_mel[f0_mel > 0] = (f0_mel[f0_mel > 0] - f0_mel_min) * 254 / (
@@ -441,7 +460,26 @@ class VC(object):
         times[2] += t2 - t1
         return audio1
 
-    def process_t(self, t, s, window, audio_pad, pitch, pitchf, times, index, big_npy, index_rate, version, protect, t_pad_tgt, if_f0, sid, model, net_g):
+    def process_t(
+        self,
+        t,
+        s,
+        window,
+        audio_pad,
+        pitch,
+        pitchf,
+        times,
+        index,
+        big_npy,
+        index_rate,
+        version,
+        protect,
+        t_pad_tgt,
+        if_f0,
+        sid,
+        model,
+        net_g,
+    ):
         t = t // window * window
         if if_f0 == 1:
             return self.vc(
@@ -457,7 +495,7 @@ class VC(object):
                 index_rate,
                 version,
                 protect,
-            )[t_pad_tgt : -t_pad_tgt]
+            )[t_pad_tgt:-t_pad_tgt]
         else:
             return self.vc(
                 model,
@@ -472,11 +510,32 @@ class VC(object):
                 index_rate,
                 version,
                 protect,
-            )[t_pad_tgt : -t_pad_tgt]
+            )[t_pad_tgt:-t_pad_tgt]
 
-    def pipeline(self, model, net_g, sid, audio, input_audio_path, times, f0_up_key, f0_method,
-            file_index, index_rate, if_f0, filter_radius, tgt_sr, resample_sr, rms_mix_rate,
-            version, protect, crepe_hop_length, f0_file=None, f0_min=50, f0_max=1100):
+    def pipeline(
+        self,
+        model,
+        net_g,
+        sid,
+        audio,
+        input_audio_path,
+        times,
+        f0_up_key,
+        f0_method,
+        file_index,
+        index_rate,
+        if_f0,
+        filter_radius,
+        tgt_sr,
+        resample_sr,
+        rms_mix_rate,
+        version,
+        protect,
+        crepe_hop_length,
+        f0_file=None,
+        f0_min=50,
+        f0_max=1100,
+    ):
         try:
             index = faiss.read_index(file_index)
             big_npy = index.reconstruct_n(0, index.ntotal)
@@ -488,16 +547,20 @@ class VC(object):
         audio = signal.filtfilt(bh, ah, audio)
         audio_pad = np.pad(audio, (self.window // 2, self.window // 2), mode="reflect")
         opt_ts = []
-        
+
         if audio_pad.shape[0] > self.t_max:
             audio_sum = np.zeros_like(audio)
             for i in range(self.window):
                 audio_sum += audio_pad[i : i - self.window]
-            
+
             for t in range(self.t_center, audio.shape[0], self.t_center):
                 abs_audio_sum = np.abs(audio_sum[t - self.t_query : t + self.t_query])
                 min_abs_audio_sum = abs_audio_sum.min()
-                opt_ts.append(t - self.t_query + np.where(abs_audio_sum == min_abs_audio_sum)[0][0])
+                opt_ts.append(
+                    t
+                    - self.t_query
+                    + np.where(abs_audio_sum == min_abs_audio_sum)[0][0]
+                )
 
         s = 0
         audio_opt = []
@@ -510,7 +573,13 @@ class VC(object):
         if f0_file is not None:
             try:
                 with open(f0_file.name, "r") as f:
-                    inp_f0 = np.array([list(map(float, line.split(","))) for line in f.read().strip("\n").split("\n")], dtype="float32")
+                    inp_f0 = np.array(
+                        [
+                            list(map(float, line.split(",")))
+                            for line in f.read().strip("\n").split("\n")
+                        ],
+                        dtype="float32",
+                    )
             except:
                 traceback.print_exc()
 
@@ -519,10 +588,21 @@ class VC(object):
 
         if if_f0:
             pitch, pitchf = self.get_f0(
-                input_audio_path, audio_pad, p_len, f0_up_key, f0_method,
-                filter_radius, crepe_hop_length, inp_f0, f0_min, f0_max)
-            
-            pitch = pitch[:p_len].astype(np.int64 if self.device != 'mps' else np.float32)
+                input_audio_path,
+                audio_pad,
+                p_len,
+                f0_up_key,
+                f0_method,
+                filter_radius,
+                crepe_hop_length,
+                inp_f0,
+                f0_min,
+                f0_max,
+            )
+
+            pitch = pitch[:p_len].astype(
+                np.int64 if self.device != "mps" else np.float32
+            )
             pitchf = pitchf[:p_len].astype(np.float32)
             pitch = torch.from_numpy(pitch).to(self.device).unsqueeze(0)
             pitchf = torch.from_numpy(pitchf).to(self.device).unsqueeze(0)
@@ -536,23 +616,65 @@ class VC(object):
                 start = s
                 end = t + self.t_pad2 + self.window
                 audio_slice = audio_pad[start:end]
-                pitch_slice = pitch[:, start // self.window:end // self.window] if if_f0 else None
-                pitchf_slice = pitchf[:, start // self.window:end // self.window] if if_f0 else None
-                audio_opt.append(self.vc(model, net_g, sid, audio_slice, pitch_slice, pitchf_slice, times, index, big_npy, index_rate, version, protect)[self.t_pad_tgt : -self.t_pad_tgt])
+                pitch_slice = (
+                    pitch[:, start // self.window : end // self.window]
+                    if if_f0
+                    else None
+                )
+                pitchf_slice = (
+                    pitchf[:, start // self.window : end // self.window]
+                    if if_f0
+                    else None
+                )
+                audio_opt.append(
+                    self.vc(
+                        model,
+                        net_g,
+                        sid,
+                        audio_slice,
+                        pitch_slice,
+                        pitchf_slice,
+                        times,
+                        index,
+                        big_npy,
+                        index_rate,
+                        version,
+                        protect,
+                    )[self.t_pad_tgt : -self.t_pad_tgt]
+                )
                 s = t
                 pbar.update(1)
                 pbar.refresh()
 
         audio_slice = audio_pad[t:]
-        pitch_slice = pitch[:, t // self.window:] if if_f0 and t is not None else pitch
-        pitchf_slice = pitchf[:, t // self.window:] if if_f0 and t is not None else pitchf
-        audio_opt.append(self.vc(model, net_g, sid, audio_slice, pitch_slice, pitchf_slice, times, index, big_npy, index_rate, version, protect)[self.t_pad_tgt : -self.t_pad_tgt])
-        
+        pitch_slice = pitch[:, t // self.window :] if if_f0 and t is not None else pitch
+        pitchf_slice = (
+            pitchf[:, t // self.window :] if if_f0 and t is not None else pitchf
+        )
+        audio_opt.append(
+            self.vc(
+                model,
+                net_g,
+                sid,
+                audio_slice,
+                pitch_slice,
+                pitchf_slice,
+                times,
+                index,
+                big_npy,
+                index_rate,
+                version,
+                protect,
+            )[self.t_pad_tgt : -self.t_pad_tgt]
+        )
+
         audio_opt = np.concatenate(audio_opt)
         if rms_mix_rate != 1:
             audio_opt = change_rms(audio, 16000, audio_opt, tgt_sr, rms_mix_rate)
         if resample_sr >= 16000 and tgt_sr != resample_sr:
-            audio_opt = librosa.resample(audio_opt, orig_sr=tgt_sr, target_sr=resample_sr)
+            audio_opt = librosa.resample(
+                audio_opt, orig_sr=tgt_sr, target_sr=resample_sr
+            )
 
         max_int16 = 32768
         audio_max = max(np.abs(audio_opt).max() / 0.99, 1)

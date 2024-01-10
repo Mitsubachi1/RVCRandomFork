@@ -7,6 +7,7 @@ from multiprocessing import cpu_count
 global usefp16
 usefp16 = False
 
+
 def decide_fp_config():
     global usefp16
     usefp16 = False
@@ -16,7 +17,13 @@ def decide_fp_config():
         device_capability = torch.cuda.get_device_capability(device)[0]
         if device_capability >= 7:
             usefp16 = True
-            for config_file in ["32k.json", "32k_v2.json", "40k.json", "48k.json", "48k_v2.json"]:
+            for config_file in [
+                "32k.json",
+                "32k_v2.json",
+                "40k.json",
+                "48k.json",
+                "48k_v2.json",
+            ]:
                 with open(f"configs/{config_file}", "r") as d:
                     data = json.load(d)
 
@@ -69,6 +76,7 @@ def decide_fp_config():
         )
     return (usefp16, device_capability)
 
+
 class Config:
     def __init__(self):
         self.device = "cuda:0"
@@ -116,13 +124,13 @@ class Config:
         )
 
         parser.add_argument(
-                    "-t",
-                    "--theme",
-            help    = "Theme for Gradio. Format - `JohnSmith9982/small_and_pretty` (no backticks)",
-            default = "gradio/soft",
-            type    = str
+            "-t",
+            "--theme",
+            help="Theme for Gradio. Format - `JohnSmith9982/small_and_pretty` (no backticks)",
+            default="gradio/soft",
+            type=str,
         )
-        
+
         cmd_opts = parser.parse_args()
 
         cmd_opts.port = cmd_opts.port if 0 <= cmd_opts.port <= 65535 else 7865
